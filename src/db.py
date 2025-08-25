@@ -9,6 +9,9 @@ import logging
 # Setup logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# Set Database Path during development
+DB_PATH = "C:/HA-Data/data/HAdata.db"
+
 # Open and Close DB connection
 def open_db():
     if getattr(sys, 'frozen', False):
@@ -24,8 +27,9 @@ def open_db():
             shutil.copy(db_source, db_path)
     else:
         # Running as script
-        base_path = os.path.dirname(os.path.dirname(__file__))
-        db_path = os.path.join(base_path, "data", "HAdata.db")
+        #base_path = os.path.dirname(os.path.dirname(__file__))
+        #db_path = os.path.join(base_path, "data", "HAdata.db")
+        db_path = DB_PATH
     try:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
