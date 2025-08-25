@@ -2,6 +2,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import requests
 import webbrowser
+import subprocess
+import re
 import json
 import time
 import os
@@ -21,20 +23,116 @@ REQUISITION_VALIDITY_DAYS = 90
 LOG_DIR = resource_path("Logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 
+# Set up logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
 ### GoCardless Maintenance Form and related functions ###
 
-def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID = 25               385
+def validate_time_format(time_str):
+    """Validate time input in HH:MM AM/PM format."""
+    try:
+        if not re.match(r'^(1[0-2]|0?[1-9]):[0-5][0-9] (AM|PM)$', time_str, re.IGNORECASE):
+            return False
+        return True
+    except:
+        return False
+    
+def convert_to_24hr(time_str):
+    """Convert HH:MM AM/PM to 24-hour HH:MM format for schtasks."""
+    try:
+        # Split time and AM/PM
+        time_part, period = time_str.split()
+        hours, minutes = map(int, time_part.split(':'))
+        if period.upper() == 'PM' and hours != 12:
+            hours += 12
+        elif period.upper() == 'AM' and hours == 12:
+            hours = 0
+        return f'{hours:02d}:{minutes:02d}'
+    except:
+        return None
+
+def create_or_update_task(task_name, time1, time2=None, enabled=True):
+    """Create or update Windows Scheduler task for fetch_bank_trans.py."""
+    python_exe = "C:/HA-Project/.venv/Scripts/python.exe"  # Adjust if not using .venv
+    script_path = "C:/HA-Project/src/fetch_bank_trans.py"  # Full path to script
+    
+    # Convert times to 24-hour format
+    time1_24hr = convert_to_24hr(time1)
+    if not time1_24hr:
+        logging.error(f"Invalid time1 format: {time1}")
+        return False
+    time2_24hr = convert_to_24hr(time2) if time2 else None
+    
+    # Build schtasks command
+    cmd = f'schtasks /CREATE /SC DAILY /TN "{task_name}" /TR "\"{python_exe}\" \"{script_path}\"" /ST {time1_24hr}'
+    if time2_24hr:
+        cmd += f' /RI 1440 /DU 24:00'  # Repeat daily with second trigger
+    if not enabled:
+        cmd = f'schtasks /CHANGE /TN "{task_name}" /DISABLE'
+    
+    logging.debug(f"Executing schtasks command: {cmd}")
+    try:
+        result = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
+        logging.debug(f"schtasks output: {result.stdout}")
+        return True
+    except subprocess.CalledProcessError as e:
+        logging.error(f"schtasks failed: {e.stderr}")
+        return False
+
+def delete_task(task_name):
+    """Delete the specified Windows Scheduler task."""
+    cmd = f'schtasks /DELETE /TN "{task_name}" /F'
+    logging.debug(f"Executing schtasks command: {cmd}")
+    try:
+        result = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
+        logging.debug(f"schtasks output: {result.stdout}")
+        return True
+    except subprocess.CalledProcessError as e:
+        logging.error(f"schtasks failed: {e.stderr}")
+        return False
+
+def get_task_status(task_name):
+    """Check if the task exists and is enabled."""
+    cmd = f'schtasks /QUERY /TN "{task_name}" /FO CSV'
+    logging.debug(f"Executing schtasks command: {cmd}")
+    try:
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        if task_name in result.stdout:
+            return "Enabled" if "Running" in result.stdout or "Ready" in result.stdout else "Disabled"
+        return "Not Found"
+    except subprocess.CalledProcessError as e:
+        logging.error(f"schtasks query failed: {e.stderr}")
+        return "Not Found"
+
+def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID = 25
+    """Create the GoCardless maintenance form with tabbed navigation."""
+    logging.debug("Creating GC Maint Form")
     form = tk.Toplevel(parent)
     form.update_form = lambda: init_form()  # Allow setup to refresh Treeview
     win_id = 25
     scaling_factor = parent.winfo_fpixels('1i') / 96
-    form.geometry(f"{int(800 * scaling_factor)}x{int(650 * scaling_factor)}")
+    form.geometry(f"{int(800 * scaling_factor)}x{int(700 * scaling_factor)}")
     form.transient(parent)
     form.attributes("-topmost", True)
     open_form_with_position(form, conn, cursor, win_id, "Manage GoCardless Configuration")
     
+    # Create notebook for tabs
+    notebook = ttk.Notebook(form)
+    notebook.pack(pady=10, expand=True, fill="both")
+    
+    # Tab 1: Maintain GoCardless
+    tab1 = ttk.Frame(notebook)
+    notebook.add(tab1, text=" Maintain GoCardless Access ")
+    # Tab 2: Maintain Windows Scheduler
+    tab2 = ttk.Frame(notebook)
+    notebook.add(tab2, text=" Maintain Windows Scheduler ")    
+    # Tab 3: Testing GC Import (placeholder)
+    tab3 = ttk.Frame(notebook)
+    notebook.add(tab3, text="     Testing GC Import      ")
+    tk.Label(tab3, text="Testing GC Import - To be developed").pack(pady=20)    
+    
     # Treeview
-    gctree = ttk.Treeview(form, columns=("Acc_ID", "Acc_Name", "Active", "Days", "Bank", "Status", "Setup"), show="headings", height=12)
+    gctree = ttk.Treeview(tab1, columns=("Acc_ID", "Acc_Name", "Active", "Days", "Bank", "Status", "Setup"), show="headings", height=12)
     gctree.place(x=int(20 * scaling_factor), y=int(20 * scaling_factor), width=int(760 * scaling_factor))
     gctree.heading("Acc_ID", text="Account ID")
     gctree.heading("Acc_Name", text="Account Name")
@@ -129,49 +227,49 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
     gctree.bind("<Double-1>", on_setup_click)
     
     # Fields
-    tk.Label(form, text="(Click on a row to edit that record)", anchor="w", font=("Arial", 9, "italic"), width=40).place(x=int(20 * scaling_factor), y=int(260 * scaling_factor))
-    tk.Label(form, text="(To link HA account to bank account - Double-click on 'Setup')", anchor="e", font=("Arial", 9, "italic"), width=50).place(x=int(430 * scaling_factor), y=int(260 * scaling_factor))
+    tk.Label(tab1, text="(Click on a row to edit that record)", anchor="w", font=("Arial", 9, "italic"), width=40).place(x=int(20 * scaling_factor), y=int(260 * scaling_factor))
+    tk.Label(tab1, text="(To link HA account to bank account - Double-click on 'Setup')", anchor="e", font=("Arial", 9, "italic"), width=50).place(x=int(430 * scaling_factor), y=int(260 * scaling_factor))
     
-    tk.Label(form, text="Account ID:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(300 * scaling_factor))
-    tk.Label(form, textvariable=acc_id_var, anchor="w", width=20).place(x=int(350 * scaling_factor), y=int(300 * scaling_factor))
+    tk.Label(tab1, text="Account ID:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(300 * scaling_factor))
+    tk.Label(tab1, textvariable=acc_id_var, anchor="w", width=20).place(x=int(350 * scaling_factor), y=int(300 * scaling_factor))
     
-    tk.Label(form, text="Account Name:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(340 * scaling_factor))
-    tk.Label(form, textvariable=acc_name_var, anchor="w", width=20).place(x=int(350 * scaling_factor), y=int(340 * scaling_factor))
+    tk.Label(tab1, text="Account Name:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(340 * scaling_factor))
+    tk.Label(tab1, textvariable=acc_name_var, anchor="w", width=20).place(x=int(350 * scaling_factor), y=int(340 * scaling_factor))
     
-    tk.Label(form, text="Account Active:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(380 * scaling_factor))
-    active_combo = ttk.Combobox(form, textvariable=active_var, values=["Yes", "No"], width=15, state="readonly")
+    tk.Label(tab1, text="Account Active:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(380 * scaling_factor))
+    active_combo = ttk.Combobox(tab1, textvariable=active_var, values=["Yes", "No"], width=15, state="readonly")
     active_combo.place(x=int(350 * scaling_factor), y=int(380 * scaling_factor))
     
-    tk.Label(form, text="Days to Fetch:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(420 * scaling_factor))
-    days_combo = ttk.Combobox(form, textvariable=days_var, values=days_values, width=15, state="readonly")
+    tk.Label(tab1, text="Days to Fetch:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(420 * scaling_factor))
+    days_combo = ttk.Combobox(tab1, textvariable=days_var, values=days_values, width=15, state="readonly")
     days_combo.place(x=int(350 * scaling_factor), y=int(420 * scaling_factor))
-    tk.Label(form, text="(max 30 to save)", anchor="w", font=("Arial", 9, "italic"), width=20).place(x=int(480 * scaling_factor), y=int(420 * scaling_factor))
+    tk.Label(tab1, text="(max 30 to save)", anchor="w", font=("Arial", 9, "italic"), width=20).place(x=int(480 * scaling_factor), y=int(420 * scaling_factor))
     
-    tk.Label(form, text="Bank Name:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(460 * scaling_factor))
-    tk.Label(form, textvariable=bank_var, anchor="w", width=20).place(x=int(350 * scaling_factor), y=int(460 * scaling_factor))
+    tk.Label(tab1, text="Bank Name:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(460 * scaling_factor))
+    tk.Label(tab1, textvariable=bank_var, anchor="w", width=20).place(x=int(350 * scaling_factor), y=int(460 * scaling_factor))
     
     # Fetch Now Button (initially disabled)
-    fetch_button = tk.Button(form, text="Fetch Now", width=20, state="disabled", command=lambda: fetch_now())
+    fetch_button = tk.Button(tab1, text="Fetch Now", width=20, state="disabled", command=lambda: fetch_now())
     fetch_button.place(x=int(550 * scaling_factor), y=int(380 * scaling_factor))
 
     ####### Test sub-form Button+edit - remove after testing ###################
     
-    test_button = tk.Button(form, text="Show Sample json", width=25, command=lambda: show_now())
+    test_button = tk.Button(tab1, text="Show Sample json", width=25, command=lambda: show_now())
     test_button.place(x=int(550 * scaling_factor), y=int(495 * scaling_factor))
-    tk.Label(form, text="Sample File Name:", anchor="e", width=20).place(x=int(80 * scaling_factor), y=int(500 * scaling_factor))
-    tk.Entry(form, textvariable=filename_var, width=40).place(x=int(250 * scaling_factor), y=int(500 * scaling_factor))
+    tk.Label(tab1, text="Sample File Name:", anchor="e", width=20).place(x=int(80 * scaling_factor), y=int(500 * scaling_factor))
+    tk.Entry(tab1, textvariable=filename_var, width=40).place(x=int(250 * scaling_factor), y=int(500 * scaling_factor))
 
-    test_rules_button = tk.Button(form, text="Test Rules on JSON", width=25, command=lambda: test_rules_now())
+    test_rules_button = tk.Button(tab1, text="Test Rules on JSON", width=25, command=lambda: test_rules_now())
     test_rules_button.place(x=int(550 * scaling_factor), y=int(530 * scaling_factor))
-    test_rules_button = tk.Button(form, text="Manage 'pending' Match Strings", width=35, command=lambda: create_mrules_form(form, conn, cursor))
+    test_rules_button = tk.Button(tab1, text="Manage 'pending' Match Strings", width=35, command=lambda: create_mrules_form(form, conn, cursor))
     test_rules_button.place(x=int(80 * scaling_factor), y=int(530 * scaling_factor))
     
     ####### Test sub-form Button - remove after testing ###################
     
     # Save and Close Buttons
-    tk.Button(form, text="Save", width=15, command=lambda: save_account()).place(
+    tk.Button(tab1, text="Save", width=15, command=lambda: save_account()).place(
         x=int(350 * scaling_factor), y=int(600 * scaling_factor))
-    tk.Button(form, text="Close", width=15, 
+    tk.Button(tab1, text="Close", width=15, 
               command=lambda: close_form_with_position(form, conn, cursor, win_id)).place(x=int(680 * scaling_factor), y=int(600 * scaling_factor))
     
     def fetch_now():
@@ -405,6 +503,57 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
         except Exception as e:
             logger.error(f"Failed to save account settings: {str(e)}")
             messagebox.showerror("Error", f"Failed to save: {str(e)}", parent=form)
+    
+    # Scheduler form elements
+    task_name = "FetchBankTransTask"
+    tk.Label(tab2, text="Windows Scheduler can be set to automatically fetch recent", font=("Arial", 11)).place(x=int(200 * scaling_factor), y=int(30 * scaling_factor))
+    tk.Label(tab2, text="    transactions from your banks, up to twice per day.    ", font=("Arial", 11)).place(x=int(200 * scaling_factor), y=int(50 * scaling_factor))
+
+    # Enable/Disable checkbox
+    is_enabled = tk.BooleanVar(value=get_task_status(task_name) != "Not Found")
+    tk.Checkbutton(tab2, text="Enable Scheduler", variable=is_enabled, font=("Arial", 10)).place(x=int(300 * scaling_factor), y=int(100 * scaling_factor))
+
+    # Time 1 input
+    tk.Label(tab2, text="Run Time 1 (HH:MM AM/PM):", font=("Arial", 10)).place(x=int(200 * scaling_factor), y=int(160 * scaling_factor))
+    time1_entry = tk.Entry(tab2, width=10, font=("Arial", 10))
+    time1_entry.insert(0, "06:30 AM")
+    time1_entry.place(x=int(400 * scaling_factor), y=int(160 * scaling_factor))
+
+    # Time 2 input (optional)
+    tk.Label(tab2, text="Run Time 2 (HH:MM AM/PM):", font=("Arial", 10)).place(x=int(200 * scaling_factor), y=int(220 * scaling_factor))
+    time2_entry = tk.Entry(tab2, width=10, font=("Arial", 10))
+    time2_entry.insert(0, "")
+    time2_entry.place(x=int(400 * scaling_factor), y=int(220 * scaling_factor))
+    tk.Label(tab2, text="(optional)", font=("Arial", 10)).place(x=int(500 * scaling_factor), y=int(220 * scaling_factor))
+    
+    # Save and Delete buttons
+    def save_schedule():
+        time1 = time1_entry.get().strip()
+        time2 = time2_entry.get().strip()
+        if not validate_time_format(time1):
+            messagebox.showerror("Error", "Invalid Time 1 format. Use HH:MM AM/PM.")
+            return
+        if time2 and not validate_time_format(time2):
+            messagebox.showerror("Error", "Invalid Time 2 format. Use HH:MM AM/PM.")
+            return
+        logging.debug(f"time1={time1}, time2={time2}")
+        if create_or_update_task(task_name, time1, time2, is_enabled.get()):
+            messagebox.showinfo("Success", "Task scheduled successfully.")
+        else:
+            messagebox.showerror("Error", "Failed to schedule task.")
+
+    def delete_schedule():
+        if delete_task(task_name):
+            is_enabled.set(False)
+            messagebox.showinfo("Success", "Task deleted successfully.")
+        else:
+            messagebox.showerror("Error", "Failed to delete task.")
+
+    tk.Button(tab2, text="Save Schedule", width=20,font=("Arial", 10), command=save_schedule).place(x=int(200 * scaling_factor), y=int(300 * scaling_factor))
+    tk.Button(tab2, text="Delete Task", width=20,font=("Arial", 10), command=delete_schedule).place(x=int(400 * scaling_factor), y=int(300 * scaling_factor))
+    
+    tk.Button(tab2, text="Close - without making changes", width=30, font=("Arial", 10),
+              command=lambda: close_form_with_position(form, conn, cursor, win_id)).place(x=int(500 * scaling_factor), y=int(500 * scaling_factor))
     
     init_form()
     form.wait_window()
