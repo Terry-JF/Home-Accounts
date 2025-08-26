@@ -34,8 +34,8 @@ TEXT_COLORS = {                     # used for transaction status
     "Complete": "#000000"           # Black 
 }
 
-# Setup logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+# Set up logging
+logger = logging.getLogger('HA.ui_utils')
 
 def refresh_grid(tree, rows, marked_rows=None, focus_idx=None, focus_day=None):
     if marked_rows is None:
@@ -54,8 +54,6 @@ def refresh_grid(tree, rows, marked_rows=None, focus_idx=None, focus_day=None):
     tree.delete(*tree.get_children())
 
     root = tree.master.master
-#    total_count = sum(1 for r in sorted_rows if r["status"] == "Total")
-#    print(f"Total 'Total' rows: {total_count}, Total rows: {len(sorted_rows)}")
 
     for i, row_data in enumerate(sorted_rows):
         values = list(row_data["values"])  # Convert tuple to list for modification
@@ -72,13 +70,11 @@ def refresh_grid(tree, rows, marked_rows=None, focus_idx=None, focus_day=None):
                             if balance < root.credit_limits[acc_idx]:
                                 overdrawn = True
                                 values[col_idx] = f"\u25B6{balance:,.0f}\u25C0"
-#                                print(f"Row {i}, Col {col_idx}: {balance} < {root.credit_limits[acc_idx]}")
                     except ValueError:
                         pass
             if overdrawn:
                 tags.append("overdrawn")
             tree.insert("", "end", iid=str(i), values=values, tags=tags)
-#            print(f"Inserted Row {i} with tags: {tags}")
         else:
             day = values[0].lower()
             is_weekend = day in ["sat", "sun"]
@@ -97,7 +93,6 @@ def refresh_grid(tree, rows, marked_rows=None, focus_idx=None, focus_day=None):
                 tags.append("yellow")
             else:
                 tags.append(bg_key)
-#            print(f"Inserted Row {i} with status: {status}")
             if status == "Forecast":
                 tags.append("forecast")
             elif status == "Processing":
@@ -106,7 +101,6 @@ def refresh_grid(tree, rows, marked_rows=None, focus_idx=None, focus_day=None):
                 tags.append("complete")
 
             tree.insert("", "end", iid=str(i), values=values, tags=tags)
-#            print(f"Inserted Row {i} with tags: {tags}")
 
     if focus_day:
         focus_day_int = int(focus_day)
@@ -151,11 +145,11 @@ class VerticalScrolledFrame(tk.Frame):
         if self.canvas.winfo_exists():
             if event.num == 4 or event.delta > 0:
                 self.canvas.yview_scroll(-1, "units")
-                #logging.debug("Mouse wheel up")
+                #logger.debug("Mouse wheel up")
             elif event.num == 5 or event.delta < 0:
                 self.canvas.yview_scroll(1, "units")
-                #logging.debug("Mouse wheel down")
-        #logging.debug(f"Mouse wheel event: delta={event.delta}, num={getattr(event, 'num', None)}")
+                #logger.debug("Mouse wheel down")
+        #logger.debug(f"Mouse wheel event: delta={event.delta}, num={getattr(event, 'num', None)}")
         return "break"
 
     def _configure_interior(self, event):
@@ -163,12 +157,12 @@ class VerticalScrolledFrame(tk.Frame):
         self.canvas.config(scrollregion=(0, 0, size[0], size[1]))
         if self.interior.winfo_reqwidth() != self.canvas.winfo_width():
             self.canvas.config(width=self.interior.winfo_reqwidth())
-        #logging.debug(f"Interior configured: size={size}, scrollregion={(0, 0, size[0], size[1])}")
+        #logger.debug(f"Interior configured: size={size}, scrollregion={(0, 0, size[0], size[1])}")
 
     def _configure_canvas(self, event):
         if self.interior.winfo_reqwidth() != self.canvas.winfo_width():
             self.canvas.itemconfigure(self.interior_id, width=self.canvas.winfo_width())
-        #logging.debug(f"Canvas configured: width={self.canvas.winfo_width()}, interior_id={self.interior_id}")
+        #logger.debug(f"Canvas configured: width={self.canvas.winfo_width()}, interior_id={self.interior_id}")
         
     def destroy(self):
         # Unbind the mouse wheel event before destruction
@@ -188,7 +182,7 @@ def resource_path(relative_path):
             base_path = os.path.dirname(os.path.abspath(__file__))
         return os.path.join(base_path, relative_path)
     except Exception as e:
-        logging.error(f"Error resolving resource path: {e}")
+        logger.error(f"Error resolving resource path: {e}")
         raise
 
 # Window Management functions

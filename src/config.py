@@ -5,6 +5,7 @@ import os
 from dotenv import load_dotenv
 import sqlite3
 import logging
+from logging.handlers import TimedRotatingFileHandler
 
 # Load .env file from project root
 load_dotenv()
@@ -19,7 +20,7 @@ CONFIG = {
     'APP_LOG_LEVEL': os.getenv('APP_LOG_LEVEL', 'debug').lower(),
     'LOG_DAYS_TO_KEEP': int(os.getenv('LOG_DAYS_TO_KEEP', 10)),
     'DATA_DIR': os.getenv('DATA_DIR', 'C:/HA-Data/database'),
-    'LOG_DIR': os.getenv('LOG_DIR', 'C:/HA-Data/LOGS'),
+    'LOG_DIR': os.getenv('DATA_DIR', 'C:/HA-Data/LOGS'),
     'BANK_DIR': os.getenv('BANK_DIR', 'C:/HA-Data/BANK_TRANSACTIONS'),
     'DB_PATH': os.getenv('DB_PATH', 'C:/HA-Data/database/HAdata.db'),
     'API_BASE_URL': os.getenv('API_BASE_URL', 'https://bankaccountdata.gocardless.com/api/v2'),
@@ -53,11 +54,31 @@ log_levels = {
     'warning': logging.WARNING,
     'error': logging.ERROR
 }
-logging.basicConfig(
-    level=log_levels.get(CONFIG['APP_LOG_LEVEL'], logging.DEBUG),
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    filename=os.path.join(CONFIG['LOG_DIR'], 'app.log')
-)
+
+def setup_logging():
+    """Configure logging with file and optional console handlers."""
+    logger = logging.getLogger('HA')
+    logger.setLevel(log_levels.get(CONFIG['APP_LOG_LEVEL'], logging.DEBUG))
+
+    # Clear any existing handlers to prevent duplicates
+    logger.handlers.clear()
+
+    # File handler with rotation
+    log_file = os.path.join(CONFIG['LOG_DIR'], 'app.log')
+    file_handler = TimedRotatingFileHandler(
+        log_file,
+        when='midnight',
+        interval=1,
+        backupCount=CONFIG['LOG_DAYS_TO_KEEP']
+    )
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logger.addHandler(file_handler)
+
+    # Console handler (optional, only for interactive runs)
+    if CONFIG['APP_DEBUG']:
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        logger.addHandler(console_handler)
 
 def get_config(key):
     """Get a configuration value by key."""
@@ -67,5 +88,6 @@ def init_config():
     """Initialize configuration and ensure directories exist."""
     for dir_path in [CONFIG['DATA_DIR'], CONFIG['LOG_DIR'], CONFIG['BANK_DIR']]:
         os.makedirs(dir_path, exist_ok=True)
+    setup_logging()
     load_db_settings()
-    logging.debug("Configuration initialized")
+    logging.getLogger('HA').debug("Configuration initialized")

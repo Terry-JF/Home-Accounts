@@ -16,19 +16,15 @@ from gc_utils import (create_gocardless_maint_form)
 from gui_maint_rules import (create_rules_form)
 from m_reg_trans import (create_regular_transactions_maint_form)
 
-# Setup logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+# Set up logging
+logger = logging.getLogger('HA.gui')
 
 # Handle DPI scaling for high-resolution displays
 try:
     from ctypes import windll
     windll.shcore.SetProcessDpiAwareness(1)
 except Exception as e:
-    print(f"Failed to set DPI awareness: {e}")
-
-#def deb(msg=""):
-#    print(f"Debug {sys._getframe().f_back.f_lineno}: {msg}")
-
+    logger.warning(f"Failed to set DPI awareness: {e}")
 
 def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, conn=None, cursor=None, month=None, year=None, local_accounts=None, account_data=None):
     if conn is None or cursor is None or month is None or year is None or local_accounts is None or account_data is None:
@@ -387,8 +383,6 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
             elif radio == "Expense":
                 dest_idx = 0
 
-            # print(f"Saving: Type={radio}, Day={day}, Amount={amount}, Desc={desc}, From={source_idx}, To={dest_idx}, Cat={cat_pid}, SubCat={subcat_cid}")
-
             if selected_row is not None and tr_id is not None:
                 update_transaction(cursor, conn, tr_id, type_map[radio], day, month, year, status, flag, amount, desc, source_idx, dest_idx, cat_pid, subcat_cid)
                 focus_day = 0
@@ -414,10 +408,10 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
                 refresh_grid(tree, rows, parent.marked_rows, 0, focus_day)
 
         except ValueError as e:
-            print(f"Validation failed: {e}")
+            logger.error(f"Validation failed: {e}")
             messagebox.showerror("Validation Error", str(e))
         except Exception as e:
-            print(f"Save failed: {e}")
+            logger.error(f"Save failed: {e}")
             messagebox.showerror("Error", f"Failed to save transaction: {e}")
 
     def delete_transaction_handler():

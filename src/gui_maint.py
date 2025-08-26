@@ -7,8 +7,8 @@ from db import (fetch_years, fetch_accounts_by_year, insert_account, update_acco
                 fetch_lookup_values, copy_accounts_from_previous_year, bring_forward_opening_balances)
 from ui_utils import (refresh_grid, resource_path, open_form_with_position, close_form_with_position)
 
-# Setup logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+# Set up logging
+logger = logging.getLogger('HA.gui_maint')
 
 # Module-level month_names
 month_names = {
@@ -21,7 +21,7 @@ try:
     from ctypes import windll
     windll.shcore.SetProcessDpiAwareness(1)
 except Exception as e:
-    logging.warning(f"Failed to set DPI awareness: {e}")
+    logger.warning(f"Failed to set DPI awareness: {e}")
 
 ######  Form Function to Win_ID Mappings
 # Below forms are in this file
@@ -67,9 +67,6 @@ def create_account_maint_form(parent, conn, cursor, root=None):         # Win_ID
     #form.geometry("1100x800") # Hardcoded size   
     form.transient(parent)
     form.attributes("-topmost", True)
-
-    #current_month = parent.get_current_month() if hasattr(parent, 'get_current_month') else 3
-    #current_year = int(parent.year_var.get()) if hasattr(parent, 'year_var') else 2025
 
     # Year Combobox
     tk.Label(form, text="Select Year:", font=("Arial", 12)).place(x=int(20 * scaling_factor), y=int(20 * scaling_factor))
@@ -202,14 +199,14 @@ def create_account_maint_form(parent, conn, cursor, root=None):         # Win_ID
     #tk.Label(form, text="Statement Date is in previous month", font=("Arial", 9)).place(x=int(820 * scaling_factor), y=int(620 * scaling_factor))
 
     def toggle_prev():
-        print(f"prev_var before toggle: {prev_var.get()}")
+        logger.debug(f"prev_var before toggle: {prev_var.get()}")
         if prev_var.get() == 0:
             prev_var.set(1)     # Set checkbox
             prev_box.config(image=checked_img)
         else:
             prev_var.set(0)    # clear checkbox
             prev_box.config(image=unchecked_img)
-        print(f"prev_var after toggle: {prev_var.get()}")
+        logger.debug(f"prev_var after toggle: {prev_var.get()}")
 
     unchecked_img = tk.PhotoImage(file=resource_path("icons/unchecked_16.png")).zoom(int(scaling_factor))
     checked_img = tk.PhotoImage(file=resource_path("icons/checked_16.png")).zoom(int(scaling_factor))
@@ -335,9 +332,7 @@ def create_account_maint_form(parent, conn, cursor, root=None):         # Win_ID
                 parent.accounts = [row[1] for row in parent.account_data]
                 accounts = parent.accounts
                 parent.rows_container[0] = fetch_month_rows(cursor, current_month, current_year, parent.accounts, parent.account_data)
-                # print(f"Rows fetched for Treeview (Bring Forward): {parent.rows_container[0]}")  # Debug print
                 parent.update_ahb(current_month, current_year)
-                # print(f"AHB Row 1 after bring forward: {parent.button_grid[1][0]['text']}")  # Debug AHB
                 refresh_grid(parent.tree, parent.rows_container[0], parent.marked_rows)
                 for col in range(14):
                     parent.tree.heading(f"col{col+5}", text=parent.accounts[col] if col < len(parent.accounts) else f"Col{col+1}")

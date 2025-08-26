@@ -11,15 +11,15 @@ from db import  (fetch_years, fetch_subcategories, fetch_regular_for_year, fetch
                 fetch_subcategory_id, fetch_account_id_by_name)
 from ui_utils import (COLORS, TEXT_COLORS, open_form_with_position, close_form_with_position)
 
-# Setup logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+# Set up logging
+logger = logging.getLogger('HA.m_reg_trans')
 
 # Handle DPI scaling for high-resolution displays
 try:
     from ctypes import windll
     windll.shcore.SetProcessDpiAwareness(1)
 except Exception as e:
-    logging.warning(f"Failed to set DPI awareness: {e}")
+    logger.warning(f"Failed to set DPI awareness: {e}")
 
 # Module-level month_names
 month_names = {
@@ -104,7 +104,6 @@ def create_regular_transactions_maint_form(parent, conn, cursor):       # Win_ID
         check_all_var.set(False) if state else check_all_var.set(True)
 
     def refresh_list():
-        # print("Refreshing list")
         nonlocal reg_records
         if not refresh_needed.get():
             return
@@ -142,7 +141,7 @@ def create_regular_transactions_maint_form(parent, conn, cursor):       # Win_ID
                 start_date = "None" if rec["Reg_Start"] == 0 else datetime.fromordinal(int(rec["Reg_Start"]) - 1721425).strftime("%d/%m/%Y")
                 stop_date = "None" if rec["Reg_Stop"] == 0 else datetime.fromordinal(int(rec["Reg_Stop"]) - 1721425).strftime("%d/%m/%Y")
             except (ValueError, TypeError) as e:
-                print(f"Error processing dates for Reg_ID {rec['Reg_ID']}: Start={rec['Reg_Start']}, Stop={rec['Reg_Stop']}, Error={e}")
+                logger.error(f"Error processing dates for Reg_ID {rec['Reg_ID']}: Start={rec['Reg_Start']}, Stop={rec['Reg_Stop']}, Error={e}")
                 start_date = "Invalid"
                 stop_date = "Invalid"
 

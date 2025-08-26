@@ -12,34 +12,26 @@ from db import  (open_db, close_db, fetch_month_rows, fetch_transaction_sums, fe
                 update_account_year_transactions)
 from ui_utils import (COLORS, TEXT_COLORS, refresh_grid, open_form_with_position, close_form_with_position, resource_path)
 from focus_forms import (create_summary_form)
-from config import (init_config, get_config)
+from config import (init_config)
+
+# Initialize configuration - sets up logger
+init_config() 
 
 # Setup logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger('HA.main')
+logger.debug("Starting HA application")
 
 # Handle DPI scaling for high-resolution displays
 try:
     from ctypes import windll
     windll.shcore.SetProcessDpiAwareness(1)
 except Exception as e:
-    print(f"Failed to set DPI awareness: {e}")
+    logger.error(f"Failed to set DPI awareness: {e}")
 
 
 accounts = []  #Global variable
 
 def main():
-    # Configure root logger for console output
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[logging.StreamHandler()]
-    )
-    logger = logging.getLogger()
-    logger.debug("Starting HA application")
-    
-    # Initialize configuration
-    init_config() 
-    
     # Open database connection
     conn, cursor = open_db()
     
@@ -49,7 +41,6 @@ def main():
     # Close database connection when GUI exits
     close_db(conn)
 
-
 def create_home_screen(conn, cursor):
     global accounts  # Keep global for now, could refactor later
     global year_var
@@ -58,12 +49,9 @@ def create_home_screen(conn, cursor):
     open_form_with_position(root, conn, cursor, win_id, "HA2 Home Screen")
     scaling_factor = root.winfo_fpixels('1i') / 96  # Get scaling factor (e.g., 2.0 for 200% scaling)
     root.geometry(f"{int(1920 * scaling_factor)}x{int(1045 * scaling_factor)}")  # Adjust size
-    #root.geometry("1920x1045")
     root.configure(bg=COLORS["very_pale_blue"])
     root.protocol("WM_DELETE_WINDOW", lambda: None)
-#    root.state('normal')  # Not minimized
-#    root.lift()           # Bring to front
-#    root.focus_force()    # Force focus 
+    logger.debug("Starting HA application")
 
     root.selected_row = tk.IntVar(value=-1)
     root.marked_rows = set()
@@ -398,9 +386,6 @@ def create_home_screen(conn, cursor):
         tc_complete_var.set(str(tc_complete))
         tc_total_var.set(str(tc_total))
 
-#        print(f"Forecast:{tc_forecast}  Processing:{tc_processing}  Complete:{tc_complete}  Total:{tc_total}")
-#        print(f"Forecast:{tc_forecast_var.get()}  Processing:{tc_processing_var.get()}  Complete:{tc_complete_var.get()}  Total:{tc_total_var.get()}")
-
         # Completed Transactions
         for col, total in enumerate(completed):
             root.button_grid[2][col].config(text="{:,.2f}".format(total))
@@ -637,13 +622,10 @@ def create_home_screen(conn, cursor):
             refresh_grid(root.tree, root.rows_container[0], root.marked_rows, focus_idx=selected)
 
     def set_status(status_value):
-#        print("def set status ", status_value)  # Debug
         selected = root.selected_row.get()
-#        print("set status ", selected, len(root.rows_container[0]))  # Debug
         if selected >= 0 and selected < len(root.rows_container[0]) and root.rows_container[0][selected]["status"] != "Total":
             tr_id = root.rows_container[0][selected]["tr_id"]
             status_map = {"Complete": 3, "Processing": 2, "Forecast": 1}
-#            print("set status - status_map[status_value], tr_id ", status_map[status_value], tr_id, )  # Debug
             cursor.execute("UPDATE Trans SET Tr_Stat = ? WHERE Tr_ID = ?", (status_map[status_value], tr_id))
             conn.commit()
             root.rows_container[0] = fetch_month_rows(cursor, get_current_month(), int(root.year_var.get()), accounts, account_data)
@@ -661,20 +643,20 @@ def create_home_screen(conn, cursor):
             root.tree.yview_moveto(current_scroll)  # Restore scroll
 
     def toggle_ffid():
-        print(f"ff_checkbox_var before toggle: {ff_checkbox_var.get()}")
+        logger.debug(f"ff_checkbox_var before toggle: {ff_checkbox_var.get()}")
         if ff_checkbox_var.get() == 0:
             ff_checkbox_var.set(1)     # Set checkbox
             ff_box.config(image=checked_img)
             cursor.execute("UPDATE Lookups SET Lup_Seq = 1 WHERE Lup_LupT_ID=8")
             conn.commit()
-            print("Lup_Seq = 1")
+            logger.debug("Lup_Seq = 1")
         else:
             ff_checkbox_var.set(0)    # clear checkbox
             ff_box.config(image=unchecked_img)
             cursor.execute("UPDATE Lookups SET Lup_Seq = 0 WHERE Lup_LupT_ID=8")
             conn.commit()
-            print("Lup_Seq = 0")
-        print(f"ff_checkbox_var after toggle: {ff_checkbox_var.get()}")
+            logger.debug("Lup_Seq = 0")
+        logger.debug(f"ff_checkbox_var after toggle: {ff_checkbox_var.get()}")
 
         # Fetch fresh rows with updated ff_flag
         month_idx = root.get_current_month()        # gets currently selected tab
@@ -741,9 +723,6 @@ def create_home_screen(conn, cursor):
              bg=COLORS["very_pale_blue"], fg=COLORS["black"]).place(x=int(120 * scaling_factor), y=int(75 * scaling_factor))
 
     # Display Firefly ID# Control and Initialise
-    #ff_box=tk.Checkbutton(  root, text="Show FF Journal_ID in list", font=("Arial", 11), bg=COLORS["very_pale_blue"], 
-    #                        command=toggle_ffid, variable=ff_checkbox_var)
-    #ff_box.place(x=int(1710 * scaling_factor), y=int(970 * scaling_factor))
     
     unchecked_img = tk.PhotoImage(file=resource_path("icons/unchecked_16.png")).zoom(int(scaling_factor))
     checked_img = tk.PhotoImage(file=resource_path("icons/checked_16.png")).zoom(int(scaling_factor))
@@ -763,7 +742,7 @@ def create_home_screen(conn, cursor):
     else:
         ff_box.config(image=unchecked_img)
 
-#    print(f"ff checkbox initialised to: {ff_checkbox_var.get()}")
+#    logger.debug(f"ff checkbox initialised to: {ff_checkbox_var.get()}")
 
     def on_mouse_wheel(event):
         root.tree.yview_scroll(-1 * (event.delta // 120), "units")

@@ -1,32 +1,29 @@
+# src/fetch_bank_trans.py
+# Script to fetch bank transactions via GoCardless and process them
+
+import logging
 import os
 from datetime import datetime
-import sqlite3
-import logging
-from gc_utils import get_access_token, fetch_transactions, OUTPUT_DIR
-from rules_engine import process_transactions
-from config import get_config
+from src.config import get_config, init_config
+from src.db import open_db
+from src.gc_utils import get_access_token, fetch_transactions
+from src.rules_engine import process_transactions
 
-# Runs in background when launched by Windows Scheduler
+# Initialize configuration (sets up logging and directories)
+init_config()
 
-os.makedirs(get_config('LOG_DIR'), exist_ok=True)
-os.makedirs(get_config('OUTPUT_DIR'), exist_ok=True)
+# Get logger
+logger = logging.getLogger('HA.transactions')
 
 def main():
-    logger = logging.getLogger('HA.transactions')
+    """Fetch and process bank transactions."""
+    logger.debug("Starting fetch_bank_trans.py")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = os.path.join(get_config('LOG_DIR'), f"{timestamp}_fetch_transactions.log")
-    file_handler = logging.FileHandler(log_file)
-    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    logger.addHandler(file_handler)
-    logger.setLevel(logging.DEBUG)    
     
     try:
-        # Running as script
-        base_path = os.path.dirname(os.path.dirname(__file__))
-        db_path = os.path.join(base_path, "data", "HAdata.db")
-        conn = sqlite3.connect(db_path)
-        cur = conn.cursor()
-        logger.info(f"Database opened {db_path}")
+        # Open database using db.py's logic
+        conn, cur = open_db()
+        logger.info(f"Database opened at {get_config('DB_PATH')}")
         
         cur.execute("""
             SELECT Acc_ID, Requisition_ID, Fetch_Days
@@ -41,7 +38,7 @@ def main():
             return
         
         for acc_id, requisition_id, fetch_days in accounts:
-            json_path = os.path.join(OUTPUT_DIR, f"{timestamp}_transactions_{acc_id}.json")
+            json_path = os.path.join(get_config('BANK_DIR'), f"{timestamp}_transactions_{acc_id}.json")
             fetch_transactions(access_token, requisition_id, json_path, fetch_days, conn, acc_id)
             logger.debug(f"Processing transactions for account {acc_id}")
             process_transactions(json_path, conn, acc_id)
@@ -49,10 +46,12 @@ def main():
             
         conn.close()
     except Exception as e:
-        logger.error(f"Error in fetch_bank_transactions: {str(e)}")
-    finally:
-        logger.removeHandler(file_handler)
-        file_handler.close()
-        
+        logger.error(f"Error in fetch_bank_trans: {str(e)}")
+        raise
+
 if __name__ == "__main__":
     main()
+    
+    
+    
+    

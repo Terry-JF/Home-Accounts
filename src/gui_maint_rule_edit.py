@@ -10,7 +10,8 @@ from db import (fetch_rule_group_names, fetch_trigger_options, fetch_action_opti
                 fetch_account_names, fetch_subcategories, fetch_all_categories, fetch_trigger_option, fetch_action_option)
 from ui_utils import (VerticalScrolledFrame, resource_path, open_form_with_position, close_form_with_position, open_calendar, center_window, timed_message)
 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+# Set up logging
+logger = logging.getLogger('HA.maint_rule_edit')
 
 def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):                  # Win_ID = 24
     # Create the Edit Rule form as a top-level window
@@ -62,8 +63,8 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
     action_options = fetch_action_options(cursor)
     account_names = fetch_account_names(cursor, year)
     parent_categories = fetch_all_categories(cursor, year)
-    #logging.debug(f"account_names = {account_names}")
-    #logging.debug(f"parent_categories = {parent_categories}")
+    #logger.debug(f"account_names = {account_names}")
+    #logger.debug(f"parent_categories = {parent_categories}")
 
     # Rule Name field
     tk.Label(fixed_frame, text="Rule Name:", font=("Arial", 11), bg="lightgray").grid(row=0, column=0, sticky="e", padx=20 * scaling_factor, pady=5 * scaling_factor)
@@ -109,7 +110,7 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
     tk.Label(fixed_frame, text="In strict mode ALL triggers must fire for the action(s) to be executed.", font=("Arial", 10), bg="lightgray").grid(row=5, column=2, sticky="w", padx=10 * scaling_factor)
     tk.Label(fixed_frame, text="In non-strict mode, ANY trigger is enough for the action(s) to be executed.", font=("Arial", 10), bg="lightgray").grid(row=6, column=2, sticky="w", padx=10 * scaling_factor)
 
-    logging.debug("Edit Rule form open with top 6 fields created")
+    logger.debug("Edit Rule form open with top 6 fields created")
     
     # Scrolled frame for triggers and actions
     edit_scrolled_frame = VerticalScrolledFrame(edit_form)
@@ -119,12 +120,12 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
     # Fetch existing triggers for the rule
     cursor.execute("SELECT Trigger_ID, TrigO_ID, Value, Trigger_Sequence FROM Triggers WHERE Rule_ID = ? ORDER BY Trigger_Sequence", (rule_id,))
     triggers = cursor.fetchall()
-    #logging.debug(f"Rule_ID={rule_id}, Triggers={triggers}")
+    #logger.debug(f"Rule_ID={rule_id}, Triggers={triggers}")
 
     # Fetch existing actions for the rule
     cursor.execute("SELECT Action_ID, ActO_ID, Value, Action_Sequence FROM Actions WHERE Rule_ID = ? ORDER BY Action_Sequence", (rule_id,))
     actions = cursor.fetchall()
-    #logging.debug(f"Rule_ID={rule_id}, Actions={actions}")
+    #logger.debug(f"Rule_ID={rule_id}, Actions={actions}")
         
     # Load delete icon for trigger/action rows
     delete_img = tk.PhotoImage(file=resource_path("icons/3_trash-48.png"))
@@ -161,17 +162,17 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
     tk.Label(triggers_frame, text="Trigger on value", font=("Arial", 10, "bold")).grid(row=0, column=2, sticky="w", padx=10 * scaling_factor, pady=5 * scaling_factor)
     #tk.Label(triggers_frame, text="", font=("Arial", 10)).grid(row=0, column=3, sticky="w", padx=10 * scaling_factor, pady=5 * scaling_factor)  ### added
     
-    logging.debug("Trigger frame and headings created")
+    logger.debug("Trigger frame and headings created")
 
     trigger_rows = []
     for i, trigger in enumerate(triggers, start=1):
         trigger_id, trigo_id, trigger_value, trigger_sequence = trigger
         trig_option = fetch_trigger_option(cursor, trigo_id)
         # Handle cases where trig_option is a tuple
-        #logging.debug(f"Trigger ID {trigger_id}: TrigO_ID={trigo_id}, trig_option={trig_option}, trigger_value={trigger_value}, trigger_sequence={trigger_sequence}")
+        #logger.debug(f"Trigger ID {trigger_id}: TrigO_ID={trigo_id}, trig_option={trig_option}, trigger_value={trigger_value}, trigger_sequence={trigger_sequence}")
         trigger_desc = trig_option[0] if trig_option and len(trig_option) > 0 else f"Unknown Trigger (ID: {trigo_id})"
         if not trig_option:
-            logging.warning(f"No trigger option found for TrigO_ID {trigo_id}")
+            logger.warning(f"No trigger option found for TrigO_ID {trigo_id}")
 
         # Create delete button for the trigger row
         delete_btn = tk.Button(triggers_frame, image=delete_img, bg="red", command=lambda tid=trigger_id: delete_trigger_row(tid, conn, cursor, triggers_frame, trigger_rows))
@@ -190,30 +191,30 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
         if 1 <= trigo_id <= 3:                              # Amount - Numeric field (6d2 format)
             value_widget = tk.Entry(triggers_frame, width=10, font=("Arial", 10), validate="key", validatecommand=vcmd_6d2)
             value_widget.insert(0, trigger_value or "")
-            #logging.debug(f"Numeric 6d2 edit created for trigo_id= {trigo_id}")
+            #logger.debug(f"Numeric 6d2 edit created for trigo_id= {trigo_id}")
         elif 4 <= trigo_id <= 15:                           # Tag or Description -Text field (40 chars)
             value_widget = tk.Entry(triggers_frame, width=58, font=("Arial", 10))
             value_widget.insert(0, trigger_value or "")
             if trigger_value and len(trigger_value) > 40:
                 value_widget.delete(40, tk.END)
-            #logging.debug(f"Edit 40 created for trigo_id= {trigo_id}")
+            #logger.debug(f"Edit 40 created for trigo_id= {trigo_id}")
         elif 16 <= trigo_id <= 19:                          # Account Name - Combobox with account names
             accid = int(trigger_value)
             value_widget = ttk.Combobox(triggers_frame, values=[name for _, name in account_names], width=25, state="readonly", font=("Arial", 10))
             value_widget.set(next((name for a, name in account_names if a == accid), ""))
             value_widget.bind("<MouseWheel>", lambda e: scroll_frame(edit_scrolled_frame, e))  # Redirect mouse wheel scrolling to frame
-            #logging.debug(f"Combobox created for trigo_id= {trigo_id}, trigger_value={trigger_value}")
+            #logger.debug(f"Combobox created for trigo_id= {trigo_id}, trigger_value={trigger_value}")
         elif 20 <= trigo_id <= 22:                          # Date - Date field with calendar button
             value_widget = tk.Entry(triggers_frame, width=10, font=("Arial", 10), validate="key", validatecommand=vcmd_date)
             value_widget.insert(0, trigger_value or "")
             extra_widget = tk.Button(triggers_frame, text="Cal", font=("Arial", 8), command=lambda ve=value_widget: open_calendar(edit_form, ve))
             extra_widget.grid(row=i, column=3, sticky="w", padx=5 * scaling_factor)
             cspan = 1
-            #logging.debug(f"Date/Cal created for trigo_id= {trigo_id}")
+            #logger.debug(f"Date/Cal created for trigo_id= {trigo_id}")
         elif 23 <= trigo_id <= 27:                          # No field required
             value_widget = tk.Label(triggers_frame, state="disabled")
             #value_widget.insert(0, "")
-            #logging.debug(f"Disabled Edit created for trigo_id= {trigo_id}")
+            #logger.debug(f"Disabled Edit created for trigo_id= {trigo_id}")
 
         if value_widget:
             value_widget.grid(row=i, column=2, columnspan=cspan, sticky="w", padx=10 * scaling_factor)
@@ -224,11 +225,11 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
             return lambda e: update_trigger_value_field(e, row, combo, value_widget, extra_widget)
         combo.bind("<<ComboboxSelected>>", make_trigger_handler())
 
-        #logging.debug(f"Trigger row {i} created - ")
+        #logger.debug(f"Trigger row {i} created - ")
 
     def update_trigger_value_field(event, row, combo, value_widget, extra_widget):
         
-        #logging.debug(f"update_trigger_value_field - row={row}, combo={combo}")
+        #logger.debug(f"update_trigger_value_field - row={row}, combo={combo}")
         
         selected_desc = combo.get()
         cursor.execute("SELECT TrigO_ID FROM Trig_Options WHERE TrigO_Description = ?", (selected_desc,))
@@ -260,7 +261,7 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
             value_widget = tk.Label(triggers_frame, state="disabled")
         value_widget.grid(row=row, column=2, columnspan=cspan, sticky="w", padx=10 * scaling_factor)
         
-        #logging.debug(f"value_widget.grid - row={row}")
+        #logger.debug(f"value_widget.grid - row={row}")
         
         trigger_rows[row - 1] = (trigger_rows[row - 1][0], trigger_rows[row - 1][1], combo, value_widget, trigger_rows[row - 1][4], extra_widget, trigo_id)
 
@@ -271,11 +272,11 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
         if edit_scrolled_frame.canvas.winfo_exists():
             if event.delta > 0:
                 form.canvas.yview_scroll(-1, "units")
-                #logging.debug("Mouse wheel up")
+                #logger.debug("Mouse wheel up")
             elif event.delta < 0:
                 form.canvas.yview_scroll(1, "units")
-                #logging.debug("Mouse wheel down")
-        #logging.debug(f"Mouse wheel event: delta={event.delta}, num={getattr(event, 'num', None)}")
+                #logger.debug("Mouse wheel down")
+        #logger.debug(f"Mouse wheel event: delta={event.delta}, num={getattr(event, 'num', None)}")
         return "break"
     
     def add_trigger_row():
@@ -302,7 +303,7 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
         add_trigger_btn.grid(row=row + 1, column=0, columnspan=4)
         edit_scrolled_frame.canvas.configure(scrollregion=edit_scrolled_frame.canvas.bbox("all"))
         edit_form.update_idletasks()
-        #logging.debug(f"Added new trigger row at row {row}")
+        #logger.debug(f"Added new trigger row at row {row}")
 
     def delete_trigger_row(trigger_id, conn, cursor, frame, rows):
         # Delete an existing trigger from the database and UI
@@ -330,9 +331,9 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
             add_trigger_btn.grid(row=len(rows) + 1, column=0, columnspan=4)
             edit_scrolled_frame.canvas.configure(scrollregion=edit_scrolled_frame.canvas.bbox("all"))
             edit_form.update_idletasks()
-            #logging.debug(f"Deleted trigger ID {trigger_id}")
+            #logger.debug(f"Deleted trigger ID {trigger_id}")
         except Exception as e:
-            logging.error(f"Error deleting trigger ID {trigger_id}: {e}\n{traceback.format_exc()}")
+            logger.error(f"Error deleting trigger ID {trigger_id}: {e}\n{traceback.format_exc()}")
             messagebox.showerror("Error", f"Failed to delete trigger: {e}", parent=edit_form)
 
     def delete_new_trigger_row(row, frame, rows):
@@ -358,7 +359,7 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
         add_trigger_btn.grid(row=len(rows) + 1, column=0, columnspan=4)
         edit_scrolled_frame.canvas.configure(scrollregion=edit_scrolled_frame.canvas.bbox("all"))
         edit_form.update_idletasks()
-        #logging.debug(f"Deleted new trigger row at row {row}")
+        #logger.debug(f"Deleted new trigger row at row {row}")
 
     # Create button to add new trigger
     add_trigger_btn = tk.Button(triggers_frame, text="Add new trigger", font=("Arial", 10), width=20, command=add_trigger_row)
@@ -376,17 +377,17 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
     tk.Label(actions_frame, text="Action", font=("Arial", 10, "bold")).grid(row=0, column=1, sticky="w", padx=10 * scaling_factor, pady=5 * scaling_factor)
     tk.Label(actions_frame, text="Action Value", font=("Arial", 10, "bold")).grid(row=0, column=2, sticky="w", padx=10 * scaling_factor, pady=5 * scaling_factor)
 
-    logging.debug("  ### Action frame and headings created")
+    logger.debug("  ### Action frame and headings created")
     
     action_rows = []
     for i, action in enumerate(actions, start=1):
         action_id, acto_id, action_value, action_sequence = action
         act_option = fetch_action_option(cursor, acto_id)
         # Handle cases where act_option is a tuple
-        #logging.debug(f"Action ID {action_id}: ActO_ID={acto_id}, act_option={act_option}")
+        #logger.debug(f"Action ID {action_id}: ActO_ID={acto_id}, act_option={act_option}")
         action_desc = act_option[0] if act_option and len(act_option) > 0 else f"Unknown Action (ID: {acto_id})"
         if not act_option:
-            logging.warning(f"No action option found for ActO_ID {acto_id}")
+            logger.warning(f"No action option found for ActO_ID {acto_id}")
 
         # Create delete button for the action row
         delete_btn = tk.Button(actions_frame, image=delete_img, bg="red", command=lambda aid=action_id: delete_action_row(aid, conn, cursor, actions_frame, action_rows))
@@ -407,11 +408,11 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
             value_widget.insert(0, action_value or "")
             if action_value and len(action_value) > 40:
                 value_widget.delete(40, tk.END)
-            #logging.debug(f"Edit 40 created for acto_id= {acto_id}")
+            #logger.debug(f"Edit 40 created for acto_id= {acto_id}")
         elif acto_id in (3, 4, 5, 6, 7):                        # No field required
             value_widget = tk.Label(actions_frame, state="disabled")
             #value_widget.insert(0, "")
-            #logging.debug(f"Disabled Edit created for acto_id= {acto_id}")
+            #logger.debug(f"Disabled Edit created for acto_id= {acto_id}")
         elif acto_id == 8:                                      # Two comboboxes for parent and sub-category
             try:
                 pid, cid = map(int, action_value.split(',')) if action_value and ',' in action_value else (0, 0)
@@ -427,13 +428,13 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
             extra_widget.bind("<MouseWheel>", lambda e: scroll_frame(edit_scrolled_frame, e))  # Redirect mouse wheel scrolling to frame
             extra_widget.grid(row=i, column=3, sticky="w", padx=10 * scaling_factor)
             cspan = 1
-            #logging.debug(f"Dual Comboboxes created for acto_id= {acto_id}")
+            #logger.debug(f"Dual Comboboxes created for acto_id= {acto_id}")
         elif acto_id in (13, 14):                               # Combobox with account names
             accid = int(action_value)
             value_widget = ttk.Combobox(actions_frame, values=[name for _, name in account_names], width=25, state="readonly", font=("Arial", 10))
             value_widget.set(next((name for a, name in account_names if a == accid), ""))
             value_widget.bind("<MouseWheel>", lambda e: scroll_frame(edit_scrolled_frame, e))  # Redirect mouse wheel scrolling to frame
-            #logging.debug(f"Accounts Combobox created for acto_id = {acto_id}, accid = {accid}")
+            #logger.debug(f"Accounts Combobox created for acto_id = {acto_id}, accid = {accid}")
         if value_widget and acto_id != 8:
             value_widget.grid(row=i, column=2, columnspan=cspan, sticky="w", padx=10 * scaling_factor)
 
@@ -445,7 +446,7 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
         if value_widget and acto_id == 8:
             value_widget.bind("<<ComboboxSelected>>", make_action_handler())
 
-        #logging.debug(f"Action row {i} created")
+        #logger.debug(f"Action row {i} created")
         
         edit_form.next_action_row = i+1
         edit_form.action_combos[i] = combo
@@ -492,9 +493,9 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
                 cursor.execute("SELECT IE_PID FROM IE_Cata WHERE IE_Desc = ? AND IE_CID = 0 AND IE_Year = ?", (parent_name, year))
                 pid_result = cursor.fetchone()
                 pid = pid_result[0] if pid_result else 0
-                #logging.debug(f"from combo 1 select - pid = {pid} ")
+                #logger.debug(f"from combo 1 select - pid = {pid} ")
                 sub_categories = fetch_subcategories(cursor, pid, year) if pid else []
-                #logging.debug(f"subcategories = {sub_categories} ")
+                #logger.debug(f"subcategories = {sub_categories} ")
                 extra_widget['values'] = [name for _, name in sub_categories]
                 extra_widget.set("")
                 edit_form.update_idletasks()
@@ -512,8 +513,8 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
         cursor.execute("SELECT ActO_ID, ActO_Description FROM Act_Options ORDER BY ActO_Seq")
         action_options = cursor.fetchall()
         
-        #logging.debug(f"selected_actions={selected_actions}")
-        #logging.debug(f"action_options={action_options}")
+        #logger.debug(f"selected_actions={selected_actions}")
+        #logger.debug(f"action_options={action_options}")
         
         # Define restriction sets
         unique_actions = {3, 8, 10, 13, 14}  # Can appear only once
@@ -532,12 +533,12 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
             # Skip group actions if another in the group is selected elsewhere
             if acto_id in group_actions:
                 selected_group_ids = {sel_id for sel_row, sel_desc, sel_id in selected_actions if sel_id in group_actions and sel_row != row}
-                #logging.debug(f"selected_group_ids={selected_group_ids}")
+                #logger.debug(f"selected_group_ids={selected_group_ids}")
                 if selected_group_ids:
                     continue
             available_options.append((acto_id, acto_desc))
         
-        #logging.debug(f"available_options={available_options}")
+        #logger.debug(f"available_options={available_options}")
         return available_options
     
     def add_action_row(edit_form, cursor, preload=None):
@@ -545,7 +546,7 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
         nonlocal action_rows
         row = len(action_rows) + 1
         
-        #logging.debug(f"#######  add_action_row called - preload={preload}")
+        #logger.debug(f"#######  add_action_row called - preload={preload}")
         
         # Set default or preloaded value
         #if preload:
@@ -571,7 +572,7 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
         # Get selected actions from other rows
         selected_actions = [(r, edit_form.action_combos[r].get(), next((action[6] for action in action_rows if action[2] is edit_form.action_combos[r]), None))
                             for r in edit_form.action_combos if edit_form.action_combos[r].get()]
-        #logging.debug(f"selected_actions = {selected_actions}")
+        #logger.debug(f"selected_actions = {selected_actions}")
         
         # Set combobox values based on restrictions
         available_options = get_available_action_options(cursor, row, selected_actions)
@@ -602,7 +603,7 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
         #edit_form.next_action_row += 1
         edit_scrolled_frame.canvas.configure(scrollregion=edit_scrolled_frame.canvas.bbox("all"))
         edit_form.update_idletasks()
-        #logging.debug(f"Added new action row at row {row}")
+        #logger.debug(f"Added new action row at row {row}")
 
     def delete_action_row(action_id, conn, cursor, frame, rows):
         # Delete an existing action from the database and UI
@@ -630,9 +631,9 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
             add_action_btn.grid(row=len(rows) + 1, column=0, columnspan=4)  # Adjust columnspan for extra column
             edit_scrolled_frame.canvas.configure(scrollregion=edit_scrolled_frame.canvas.bbox("all"))
             edit_form.update_idletasks()
-            #logging.debug(f"Deleted action ID {action_id}")
+            #logger.debug(f"Deleted action ID {action_id}")
         except Exception as e:
-            logging.error(f"Error deleting action ID {action_id}: {e}\n{traceback.format_exc()}")
+            logger.error(f"Error deleting action ID {action_id}: {e}\n{traceback.format_exc()}")
             messagebox.showerror("Error", f"Failed to delete action: {e}", parent=edit_form)
 
     def delete_new_action_row(row, frame, rows):
@@ -658,7 +659,7 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
         add_action_btn.grid(row=len(rows) + 1, column=0, columnspan=4)  # Adjust columnspan for extra column
         edit_scrolled_frame.canvas.configure(scrollregion=edit_scrolled_frame.canvas.bbox("all"))
         edit_form.update_idletasks()
-        #logging.debug(f"Deleted new action row at row {row}")
+        #logger.debug(f"Deleted new action row at row {row}")
 
     # Create button to add new action
     add_action_btn = tk.Button(actions_frame, text="Add new action", font=("Arial", 10), width=20, command=lambda:add_action_row(edit_form, cursor, ""))
@@ -691,7 +692,7 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
                         (updated_rule_name, new_group_id, updated_active, updated_strict, not updated_stop, rule_id))
 
             # Handle triggers: delete removed ones, update existing, insert new
-            #logging.debug(f"trigger_rows={trigger_rows}")
+            #logger.debug(f"trigger_rows={trigger_rows}")
             existing_trigger_ids = set(tid for tid, _, _, _, _, _, _ in trigger_rows if tid is not None)
             cursor.execute("SELECT Trigger_ID FROM Triggers WHERE Rule_ID = ?", (rule_id,))
             db_trigger_ids = set(tid[0] for tid in cursor.fetchall())
@@ -713,22 +714,22 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
                 
                 if trigo_id in (1, 2, 3):                                       # Amount
                     trig_value = value_widget.get().strip()
-                    #logging.debug(f"1 - Saved changes for tid={tid}, trig_value={trig_value}")
+                    #logger.debug(f"1 - Saved changes for tid={tid}, trig_value={trig_value}")
                 elif trigo_id in (4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15):    # Tag text or Description text
                     trig_value = value_widget.get().strip()
-                    #logging.debug(f"2 - Saved changes for tid={tid}, trig_value={trig_value}")
+                    #logger.debug(f"2 - Saved changes for tid={tid}, trig_value={trig_value}")
                 elif trigo_id in (16, 17, 18, 19):                              # Account Name
                     account_name = value_widget.get()
                     cursor.execute("SELECT Acc_ID FROM Account WHERE Acc_Name = ? AND Acc_Year = ?", (account_name, year))
                     acc_result = cursor.fetchone()
                     trig_value = acc_result[0] if acc_result else 0
-                    #logging.debug(f"3 - Saved changes for tid={tid}, trig_value={trig_value}")
+                    #logger.debug(f"3 - Saved changes for tid={tid}, trig_value={trig_value}")
                 elif trigo_id in (20, 21, 22):                                  # Date
                     trig_value = value_widget.get().strip()
-                    #logging.debug(f"4 - Saved changes for tid={tid}, trig_value={trig_value}")
+                    #logger.debug(f"4 - Saved changes for tid={tid}, trig_value={trig_value}")
                 elif trigo_id in (23, 24, 25, 26, 27):                          # None - (Transaction Type or Status)
                     trig_value = "none"
-                    #logging.debug(f"5 - Saved changes for tid={tid}, trig_value={trig_value}")
+                    #logger.debug(f"5 - Saved changes for tid={tid}, trig_value={trig_value}")
                 if tid is None:
                     cursor.execute("INSERT INTO Triggers (Rule_ID, TrigO_ID, Value, Trigger_Sequence) VALUES (?, ?, ?, ?)", 
                                 (rule_id, trigo_id, trig_value, i + 1))
@@ -737,7 +738,7 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
                                 (trigo_id, trig_value, i + 1, tid))
 
             # Handle actions: delete removed ones, update existing, insert new
-            #logging.debug(f"action_rows={action_rows}")
+            #logger.debug(f"action_rows={action_rows}")
             existing_action_ids = set(aid for aid, _, _, _, _, _, _ in action_rows if aid is not None)
             cursor.execute("SELECT Action_ID FROM Actions WHERE Rule_ID = ?", (rule_id,))
             db_action_ids = set(aid[0] for aid in cursor.fetchall())
@@ -755,32 +756,32 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
                     messagebox.showerror("Error", f"Invalid action: {act_desc}", parent=edit_form)
                     return
                 acto_id = acto_id_result[0]
-                #logging.debug(f"Saving changes - acto_id={acto_id}")
+                #logger.debug(f"Saving changes - acto_id={acto_id}")
                 act_value = ""
                 if acto_id in (1, 2, 10, 11, 12):       # Tag text or Description text
                     act_value = value_widget.get()
-                    #logging.debug(f"1 - Saved changes for aid={aid}, act_value={act_value}")
+                    #logger.debug(f"1 - Saved changes for aid={aid}, act_value={act_value}")
                 elif acto_id in (3, 4, 5, 6, 7):        # none required
                     act_value = "none"
-                    #logging.debug(f"2 - Saved changes for aid={aid}, act_value={act_value}")
+                    #logger.debug(f"2 - Saved changes for aid={aid}, act_value={act_value}")
                 elif acto_id == 8:                      # pid, cid values - numeric pair
                     parent_name = value_widget.get()
                     sub_name = extra_widget.get() if extra_widget else ""
                     cursor.execute("SELECT IE_PID FROM IE_Cata WHERE IE_Desc = ? AND IE_CID = 0 AND IE_Year = ?", (parent_name, year))
                     pid_result = cursor.fetchone()
                     pid = pid_result[0] if pid_result else 0
-                    #logging.debug(f"3 - Saved changes for aid={aid}, pid={pid}")
+                    #logger.debug(f"3 - Saved changes for aid={aid}, pid={pid}")
                     cursor.execute("SELECT IE_CID FROM IE_Cata WHERE IE_Desc = ? AND IE_PID = ? AND IE_Year = ?", (sub_name, pid, year))
                     cid_result = cursor.fetchone()
                     cid = cid_result[0] if cid_result else 0
                     act_value = f"{pid},{cid}"
-                    #logging.debug(f"4 - Saved changes for aid={aid}, act_value={act_value}")
+                    #logger.debug(f"4 - Saved changes for aid={aid}, act_value={act_value}")
                 elif acto_id in (13, 14):               # acc_id value - numeric 1-12
                     account_name = value_widget.get()
                     cursor.execute("SELECT Acc_ID FROM Account WHERE Acc_Name = ? AND Acc_Year = ?", (account_name, year))
                     acc_result = cursor.fetchone()
                     act_value = acc_result[0] if acc_result else 0
-                    #logging.debug(f"5 - Saved changes for aid={aid}, act_value={act_value}")
+                    #logger.debug(f"5 - Saved changes for aid={aid}, act_value={act_value}")
                 if aid is None:
                     cursor.execute("INSERT INTO Actions (Rule_ID, ActO_ID, Value, Action_Sequence) VALUES (?, ?, ?, ?)", 
                                 (rule_id, acto_id, act_value, i + 1))
@@ -792,9 +793,9 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
             timed_message(edit_form, "Success", "Rule updated successfully", 3000)
             close_edit_rule_form(edit_form)
             form.event_generate("<<RefreshRules>>")
-            #logging.debug(f"Saved changes for Rule ID {rule_id}")
+            #logger.debug(f"Saved changes for Rule ID {rule_id}")
         except Exception as e:
-            logging.error(f"Error saving rule changes for Rule ID {rule_id}: {e}\n{traceback.format_exc()}")
+            logger.error(f"Error saving rule changes for Rule ID {rule_id}: {e}\n{traceback.format_exc()}")
             messagebox.showerror("Error", f"Failed to save rule changes: {e}", parent=edit_form)
 
     # Bottom frame for save and close buttons
@@ -808,8 +809,8 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
     edit_close_button = tk.Button(buttons_frame, text="Close - do not save", command=lambda: close_edit_rule_form(edit_form), bg="white", font=("Arial", 10))
     edit_close_button.pack(side="right", padx=50 * scaling_factor, pady=5 * scaling_factor)
     
-    #logging.debug(f"#######  edit_form.action_row: {action_rows}")
-    #logging.debug(f"#######  edit_form.next_action_row: {edit_form.next_action_row}")
+    #logger.debug(f"#######  edit_form.action_row: {action_rows}")
+    #logger.debug(f"#######  edit_form.next_action_row: {edit_form.next_action_row}")
     
     def close_edit_rule_form(edit_form):
         # Close the edit form
@@ -818,7 +819,7 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
         close_form_with_position(edit_form, conn, cursor, win_id)
 
     edit_form.update_idletasks()
-    logging.debug(f"Opened Edit Rule form for Rule ID {rule_id}")
+    logger.debug(f"Opened Edit Rule form for Rule ID {rule_id}")
 
     form.wait_window(edit_form)
 

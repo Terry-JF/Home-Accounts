@@ -7,8 +7,8 @@ from calendar import monthrange
 import logging
 from config import get_config
 
-# Setup logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+# Set up logging
+logger = logging.getLogger('HA.db')
 
 # Open and Close DB connection
 def open_db():
@@ -159,7 +159,6 @@ def fetch_actuals(cursor, pid, cid, month, year):
         WHERE Tr_Year = ? AND Tr_Month = ? AND Tr_Exp_ID = ? AND Tr_ExpSub_ID = ?
     """, (year, month, pid, cid))
     result = cursor.fetchone()
-    # print(f"Totals for PID={pid}, CID={cid}, Month={month}, Year={year}: {result}")  # Debug
     return result[0] or 0.0
 
 
@@ -350,8 +349,6 @@ def update_account_month_transaction_total(cursor, conn, month, year, accounts):
         WHERE Tr_Month = ? AND Tr_Year = ?
     """, (month, year))
     
-    # print("fetch_transaction_sums called with ", month, year)
-    
     # Calc change for each account
     for from_acc, to_acc, amount in cursor.fetchall():
         amount = float(amount or 0.0)
@@ -380,7 +377,6 @@ def get_window_position(cursor, win_id):
     return result if result else (None, None, None)  # (name, left, top) or (None, None, None)
 
 def save_window_position(cursor, conn, win_id, win_name, left, top):
-    #print(f"win_id= {win_id}, win_name= {win_name}, left= {left}, top= {top}")
     cursor.execute(""" INSERT OR REPLACE INTO Windows (Win_ID, Win_Name, Win_Left, Win_Top) VALUES (?, ?, ?, ?) """,
                     (win_id, win_name, left, top))
     conn.commit()
@@ -410,8 +406,6 @@ def fetch_transaction_sums(cursor, month, year, accounts):
         WHERE Tr_Month = ? AND Tr_Year = ?
     """, (month, year))
     
-    # print("fetch_transaction_sums called with ", month, year)
-    
     for from_acc, to_acc, status, amount in cursor.fetchall():
         amount = float(amount or 0.0)
         tc_total += 1
@@ -423,7 +417,7 @@ def fetch_transaction_sums(cursor, month, year, accounts):
             if from_name and from_name in accounts:
                 from_idx = accounts.index(from_name)
             else:
-                print(f"Warning: Tr_Acc_From={from_acc} not found in accounts for year {year}")
+                logger.warning(f"Warning: Tr_Acc_From={from_acc} not found in accounts for year {year}")
         
         to_idx = None
         if to_acc != 0:
@@ -431,7 +425,7 @@ def fetch_transaction_sums(cursor, month, year, accounts):
             if to_name and to_name in accounts:
                 to_idx = accounts.index(to_name)
             else:
-                print(f"Warning: Tr_Acc_To={to_acc} not found in accounts for year {year}")
+                logger.warning(f"Warning: Tr_Acc_To={to_acc} not found in accounts for year {year}")
         
         if status == 3:  # Completed
             tc_complete += 1
@@ -571,13 +565,13 @@ def fetch_rule_group_names(cursor):
 
 # Triggers Table
 def delete_trigger(cursor, conn, trigger_id):
-    logging.debug(f"Deleting trigger ID: {trigger_id}")
+    logger.debug(f"Deleting trigger ID: {trigger_id}")
     cursor.execute("DELETE FROM Triggers WHERE Trigger_ID = ?", (trigger_id,))
     conn.commit()
 
 # Actions Table
 def delete_action(cursor, conn, action_id):
-    logging.debug(f"Deleting action ID: {action_id}")
+    logger.debug(f"Deleting action ID: {action_id}")
     cursor.execute("DELETE FROM Actions WHERE Action_ID = ?", (action_id,))
     conn.commit()
 

@@ -15,7 +15,7 @@ from rules_engine import (process_transactions, test_rules)
 from config import CONFIG, get_config
 
 # Set up logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger('HA.gc_utils')
 
 ### GoCardless Maintenance Form and related functions ###
 
@@ -57,7 +57,7 @@ def create_or_update_task(task_name, time1, time2=None, enabled=True):
     # Build schtasks command
     cmd = f'schtasks /CREATE /SC DAILY /TN "{task_name}" /TR "\"{python_exe}\" \"{script_path}\"" /ST {time1_24hr}'
     if time2_24hr:
-        cmd += f' /RI 1440 /DU 24:00'  # Repeat daily with second trigger
+        cmd += ' /RI 1440 /DU 24:00'  # Repeat daily with second trigger
     if not enabled:
         cmd = f'schtasks /CHANGE /TN "{task_name}" /DISABLE'
     
@@ -114,17 +114,17 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
     
     # Tab 1: Maintain GoCardless
     tab1 = ttk.Frame(notebook)
-    notebook.add(tab1, text="Maintain GoCardless Access")
+    notebook.add(tab1, text="GoCardless Access")
     # Tab 2: Maintain Windows Scheduler
     tab2 = ttk.Frame(notebook)
-    notebook.add(tab2, text="Maintain Windows Scheduler")    
+    notebook.add(tab2, text="Windows Scheduler")    
     # Tab 3: Testing GC Import (placeholder)
     tab3 = ttk.Frame(notebook)
     notebook.add(tab3, text="Testing GC Import")
     tk.Label(tab3, text="Testing GC Import - To be developed")    
     # Tab 4: Other Settings
     tab4 = ttk.Frame(notebook)
-    notebook.add(tab4, text="Other Settings")    
+    notebook.add(tab4, text="  Other Settings   ")    
     
     
     # Treeview

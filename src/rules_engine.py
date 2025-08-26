@@ -4,12 +4,13 @@ import sqlite3
 import re
 import logging
 
+# Set up logging
+logger = logging.getLogger('HA.rules_engine')
 
 def process_transactions(json_path, conn, acc_id):
     """
-    Process transactions from a JSON file into HA_Import and Trans tables.
+    Process transactions from a JSON file into HA_Import and then Trans table.
     """
-    logger = logging.getLogger('HA.transactions')
     logger.debug(f"Processing transactions from {json_path} for account {acc_id}")
     
     try:
@@ -109,7 +110,6 @@ def match_transaction(cur, hai_type, hai_day, hai_month, hai_year, hai_amount, h
     Match a transaction against Trans table using 31 steps.
     Returns Tr_ID if matched, None if no match.
     """
-    logger = logging.getLogger('HA.transactions')
     logger.debug(f"Matching transaction: Type={hai_type}, Date={hai_year}-{hai_month}-{hai_day}, Amount={hai_amount}")
     
     # Step 1: Exact match
@@ -232,7 +232,6 @@ def apply_rules(conn, tr_id, description):      # just a placeholder
     """
     Apply rules to categorize transactions.
     """
-    logger = logging.getLogger('HA.transactions')
     logger.debug(f"Applying rules to Tr_ID={tr_id}, Description={description}")
 
     cur = conn.cursor()
@@ -245,7 +244,6 @@ def test_rules(json_path, conn, acc_id):        # just a placeholder
     """
     Test rules on a JSON file and return results for GUI display.
     """
-    logger = logging.getLogger('HA.transactions')
     logger.debug(f"Testing rules on {json_path} for account {acc_id}")
     
     results = []

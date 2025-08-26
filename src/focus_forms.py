@@ -6,15 +6,15 @@ import logging
 from db import  (fetch_years, fetch_categories, fetch_subcategories, fetch_actuals)
 from ui_utils import (COLORS, TEXT_COLORS, open_form_with_position, close_form_with_position)
 
-# Setup logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+# Set up logging
+logger = logging.getLogger('HA.focus_forms')
 
 # Handle DPI scaling for high-resolution displays
 try:
     from ctypes import windll
     windll.shcore.SetProcessDpiAwareness(1)
 except Exception as e:
-    logging.warning(f"Failed to set DPI awareness: {e}")
+    logger.warning(f"Failed to set DPI awareness: {e}")
 
 # Module-level month_names
 month_names = {
