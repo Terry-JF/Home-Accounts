@@ -4,18 +4,17 @@ import sqlite3
 import logging
 from gc_utils import get_access_token, fetch_transactions, OUTPUT_DIR
 from rules_engine import process_transactions
-from ui_utils import resource_path
+from config import get_config
 
 # Runs in background when launched by Windows Scheduler
 
-LOG_DIR = resource_path("Logs")
-os.makedirs(LOG_DIR, exist_ok=True)
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs(get_config('LOG_DIR'), exist_ok=True)
+os.makedirs(get_config('OUTPUT_DIR'), exist_ok=True)
 
 def main():
     logger = logging.getLogger('HA.transactions')
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = os.path.join(LOG_DIR, f"{timestamp}_fetch_transactions.log")
+    log_file = os.path.join(get_config('LOG_DIR'), f"{timestamp}_fetch_transactions.log")
     file_handler = logging.FileHandler(log_file)
     file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
     logger.addHandler(file_handler)

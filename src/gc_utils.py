@@ -12,16 +12,7 @@ from datetime import datetime, timedelta
 from uuid import uuid4
 from ui_utils import (COLORS, resource_path, open_form_with_position, close_form_with_position, center_window)
 from rules_engine import (process_transactions, test_rules)
-
-# Configuration
-OUTPUT_DIR = resource_path("BankTransactions")      # Output directory for returned transaction files
-API_BASE_URL = "https://bankaccountdata.gocardless.com/api/v2"
-TOKEN_MARGIN = 60
-EXPIRY_WARNING_DAYS = 10
-REQUISITION_VALIDITY_DAYS = 90
-
-LOG_DIR = resource_path("Logs")
-os.makedirs(LOG_DIR, exist_ok=True)
+from config import CONFIG, get_config
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -36,7 +27,7 @@ def validate_time_format(time_str):
         return True
     except:
         return False
-    
+
 def convert_to_24hr(time_str):
     """Convert HH:MM AM/PM to 24-hour HH:MM format for schtasks."""
     try:
@@ -53,8 +44,8 @@ def convert_to_24hr(time_str):
 
 def create_or_update_task(task_name, time1, time2=None, enabled=True):
     """Create or update Windows Scheduler task for fetch_bank_trans.py."""
-    python_exe = "C:/HA-Project/.venv/Scripts/python.exe"  # Adjust if not using .venv
-    script_path = "C:/HA-Project/src/fetch_bank_trans.py"  # Full path to script
+    python_exe = resource_path(".venv/Scripts/python.exe")                          # Adjust if not using .venv
+    script_path = resource_path("fetch_bank_trans.py")                              # Full path to script
     
     # Convert times to 24-hour format
     time1_24hr = convert_to_24hr(time1)
@@ -104,6 +95,7 @@ def get_task_status(task_name):
         logging.error(f"schtasks query failed: {e.stderr}")
         return "Not Found"
 
+# Entry point for the form
 def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID = 25
     """Create the GoCardless maintenance form with tabbed navigation."""
     logging.debug("Creating GC Maint Form")
@@ -122,14 +114,18 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
     
     # Tab 1: Maintain GoCardless
     tab1 = ttk.Frame(notebook)
-    notebook.add(tab1, text=" Maintain GoCardless Access ")
+    notebook.add(tab1, text="Maintain GoCardless Access")
     # Tab 2: Maintain Windows Scheduler
     tab2 = ttk.Frame(notebook)
-    notebook.add(tab2, text=" Maintain Windows Scheduler ")    
+    notebook.add(tab2, text="Maintain Windows Scheduler")    
     # Tab 3: Testing GC Import (placeholder)
     tab3 = ttk.Frame(notebook)
-    notebook.add(tab3, text="     Testing GC Import      ")
-    tk.Label(tab3, text="Testing GC Import - To be developed").pack(pady=20)    
+    notebook.add(tab3, text="Testing GC Import")
+    tk.Label(tab3, text="Testing GC Import - To be developed")    
+    # Tab 4: Other Settings
+    tab4 = ttk.Frame(notebook)
+    notebook.add(tab4, text="Other Settings")    
+    
     
     # Treeview
     gctree = ttk.Treeview(tab1, columns=("Acc_ID", "Acc_Name", "Active", "Days", "Bank", "Status", "Setup"), show="headings", height=12)
@@ -189,7 +185,7 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
                 conn.commit()
                 status = "Expired"
             tags = ()
-            if status == "Linked" and expiry and now > expiry - EXPIRY_WARNING_DAYS * 86400:
+            if status == "Linked" and expiry and now > expiry - get_config('EXPIRY_WARNING_DAYS') * 86400:
                 tags = ("expiring",) if now < expiry else ("expired",)
             if tags == () and status == "Linked":
                 tags = ("ready")
@@ -275,7 +271,7 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
     def fetch_now():
         logger = logging.getLogger('HA.transactions')
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = os.path.join(LOG_DIR, f"{timestamp}_fetch_transactions.log")
+        log_file = os.path.join(get_config('LOG_DIR'), f"{timestamp}_fetch_transactions.log")
         file_handler = logging.FileHandler(log_file)
         file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         logger.addHandler(file_handler)
@@ -303,7 +299,7 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
                 return
             
             # Temporary json path
-            json_path = os.path.join(OUTPUT_DIR, f"{timestamp}_test_transactions_{acc_id}.json")
+            json_path = os.path.join(get_config('OUTPUT_DIR'), f"{timestamp}_test_transactions_{acc_id}.json")
             logger.debug(f"Fetching transactions for account {acc_id} to {json_path}")        
                 
             # Fetch and save to json using fetch_bank_transactions.py
@@ -320,7 +316,7 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
                         
     def show_now():
         logger = logging.getLogger()
-        json_path = os.path.join(OUTPUT_DIR, filename_var.get())
+        json_path = os.path.join(get_config('OUTPUT_DIR'), filename_var.get())
         logger.debug(f"Showing JSON file: {json_path}")
         if os.path.isfile(json_path):
             display_transactions_form(form, json_path)
@@ -331,7 +327,7 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
     def test_rules_now():
         logger = logging.getLogger('HA.transactions')
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = os.path.join(LOG_DIR, f"{timestamp}_test_rules.log")
+        log_file = os.path.join(get_config('LOG_DIR'), f"{timestamp}_test_rules.log")
         file_handler = logging.FileHandler(log_file)
         file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         logger.addHandler(file_handler)
@@ -343,7 +339,7 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
                 messagebox.showerror("Error", "No account selected.", parent=form)
                 return
             acc_id = int(acc_id_var.get())
-            json_path = os.path.join(OUTPUT_DIR, filename_var.get())
+            json_path = os.path.join(get_config('OUTPUT_DIR'), filename_var.get())
             logger.debug(f"Testing rules on: {json_path}")
             if os.path.isfile(json_path):
                 process_transactions(json_path, conn, acc_id)  # Reprocess JSON
@@ -504,6 +500,19 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
             logger.error(f"Failed to save account settings: {str(e)}")
             messagebox.showerror("Error", f"Failed to save: {str(e)}", parent=form)
     
+    def toggle_es():
+        logging.debug(f"is_enabled before toggle: {is_enabled.get()}")
+        if is_enabled.get() :
+            is_enabled.set(False)   # Clear checkbox
+            es_box.config(image=unchecked_img)
+        else:
+            is_enabled.set(True)    # Set checkbox
+            es_box.config(image=checked_img)
+        logging.debug(f"is_enabled after toggle: {is_enabled.get()}")
+        
+        test=resource_path("test")
+        logging.debug(f"resource_path: {test}")
+    
     # Scheduler form elements
     task_name = "FetchBankTransTask"
     tk.Label(tab2, text="Windows Scheduler can be set to automatically fetch recent", font=("Arial", 11)).place(x=int(200 * scaling_factor), y=int(30 * scaling_factor))
@@ -511,8 +520,20 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
 
     # Enable/Disable checkbox
     is_enabled = tk.BooleanVar(value=get_task_status(task_name) != "Not Found")
-    tk.Checkbutton(tab2, text="Enable Scheduler", variable=is_enabled, font=("Arial", 10)).place(x=int(300 * scaling_factor), y=int(100 * scaling_factor))
+    #tk.Checkbutton(tab2, text="Enable Scheduler", variable=is_enabled, font=("Arial", 10)).place(x=int(300 * scaling_factor), y=int(100 * scaling_factor))
 
+    unchecked_img = tk.PhotoImage(file=resource_path("icons/unchecked_16.png")).zoom(int(scaling_factor))
+    checked_img = tk.PhotoImage(file=resource_path("icons/checked_16.png")).zoom(int(scaling_factor))
+
+    tk.Label(tab2, text="Enable Scheduler", anchor=tk.W, width=int(14 * scaling_factor), font=("Arial", 11), 
+             bg=COLORS["very_pale_blue"], fg=COLORS["black"]).place(x=int(330 * scaling_factor), y=int(100 * scaling_factor))
+    if is_enabled:
+        image=checked_img
+    else:
+        image=unchecked_img
+    es_box=tk.Button(tab2, image=image, bg=COLORS["very_pale_blue"], command=toggle_es)
+    es_box.place(x=int(300 * scaling_factor), y=int(100 * scaling_factor))
+    
     # Time 1 input
     tk.Label(tab2, text="Run Time 1 (HH:MM AM/PM):", font=("Arial", 10)).place(x=int(200 * scaling_factor), y=int(160 * scaling_factor))
     time1_entry = tk.Entry(tab2, width=10, font=("Arial", 10))
@@ -555,10 +576,46 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
     tk.Button(tab2, text="Close - without making changes", width=30, font=("Arial", 10),
               command=lambda: close_form_with_position(form, conn, cursor, win_id)).place(x=int(500 * scaling_factor), y=int(500 * scaling_factor))
     
+    # Other Settings form elements
+
+    # Expiry Warning Days
+    tk.Label(tab4, text="Expiry Warning Days:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
+    expiry_entry = tk.Entry(tab4, width=10)
+    expiry_entry.insert(0, str(get_config('EXPIRY_WARNING_DAYS')))
+    expiry_entry.grid(row=0, column=1, padx=5, pady=5)
+
+    # Log Days to Keep
+    tk.Label(tab4, text="Log Days to Keep:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
+    log_days_entry = tk.Entry(tab4, width=10)
+    log_days_entry.insert(0, str(get_config('LOG_DAYS_TO_KEEP')))
+    log_days_entry.grid(row=1, column=1, padx=5, pady=5)
+
+    # Save Settings button
+    def save_settings():
+        try:
+            expiry_days = int(expiry_entry.get())
+            log_days = int(log_days_entry.get())
+            if expiry_days < 0 or log_days < 0:
+                messagebox.showerror("Error", "Values must be non-negative.")
+                return
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ('EXPIRY_WARNING_DAYS', expiry_days))
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ('LOG_DAYS_TO_KEEP', log_days))
+            cursor.commit()
+            CONFIG['EXPIRY_WARNING_DAYS'] = expiry_days
+            CONFIG['LOG_DAYS_TO_KEEP'] = log_days
+            messagebox.showinfo("Success", "Settings updated successfully.")
+        except ValueError:
+            messagebox.showerror("Error", "Invalid number for settings.")
+        except cursor.Error as e:
+            messagebox.showerror("Error", f"Failed to update settings: {e}")
+
+    tk.Button(tab4, text="Save Settings", command=save_settings).grid(row=2, column=0, columnspan=2, padx=5, pady=10)
+    
+    
     init_form()
     form.wait_window()
 
-def create_mrules_form(parent, conn, cursor):                           #                           62
+def create_mrules_form(parent, conn, cursor):
     form = tk.Toplevel(parent)
     form.title("Manage Description Rules")
     scaling_factor = parent.winfo_fpixels('1i') / 96
@@ -621,7 +678,7 @@ def create_mrules_form(parent, conn, cursor):                           #       
     load_rules()
     form.wait_window()
 
-def check_requisition_status(conn, requisition_id, parent, progress_dialog=None):       #           20
+def check_requisition_status(conn, requisition_id, parent, progress_dialog=None):
     try:
         access_token = get_access_token(conn)
         if not access_token:
@@ -629,7 +686,7 @@ def check_requisition_status(conn, requisition_id, parent, progress_dialog=None)
                 progress_dialog.destroy()
             return None
         headers = {"Authorization": f"Bearer {access_token}"}
-        response = requests.get(f"{API_BASE_URL}/requisitions/{requisition_id}/", headers=headers)
+        response = requests.get(f"{get_config('API_BASE_URL')}/requisitions/{requisition_id}/", headers=headers)
         if response.status_code != 200:
             if progress_dialog:
                 progress_dialog.destroy()
@@ -642,7 +699,7 @@ def check_requisition_status(conn, requisition_id, parent, progress_dialog=None)
         messagebox.showerror("Error", f"Failed to check status: {str(e)}", parent=parent)
         return None
 
-def setup_gc_requisition(conn, acc_id, parent, form):                   #                           113
+def setup_gc_requisition(conn, acc_id, parent, form):
     logger = logging.getLogger()
     cur = conn.cursor()
     cur.execute("""
@@ -664,7 +721,7 @@ def setup_gc_requisition(conn, acc_id, parent, form):                   #       
         return
     
     headers = {"Authorization": f"Bearer {access_token}"}
-    response = requests.get(f"{API_BASE_URL}/institutions/?country={country_code}", headers=headers)
+    response = requests.get(f"{get_config('API_BASE_URL')}/institutions/?country={country_code}", headers=headers)
     if response.status_code != 200:
         messagebox.showerror("Error", f"Failed to fetch institutions: {response.status_code} {response.text}", parent=parent)
         return
@@ -696,7 +753,7 @@ def setup_gc_requisition(conn, acc_id, parent, form):                   #       
         "redirect": "https://gocardless.com",
         "reference": str(uuid4())
     }
-    response = requests.post(f"{API_BASE_URL}/requisitions/", json=payload, headers=headers)
+    response = requests.post(f"{get_config('API_BASE_URL')}/requisitions/", json=payload, headers=headers)
     if response.status_code != 201:
         logger.error(f"Failed to create requisition: {response.status_code} {response.text}")
         messagebox.showerror("Error", f"Failed to create requisition: {response.status_code} {response.text}", parent=parent)
@@ -732,7 +789,7 @@ def setup_gc_requisition(conn, acc_id, parent, form):                   #       
         status = check_requisition_status(conn, data['id'], parent, auth_dialog)
         if status == "LN":
             auth_dialog.destroy()
-            expiry = time.time() + REQUISITION_VALIDITY_DAYS * 86400
+            expiry = time.time() + get_config('REQUISITION_VALIDITY_DAYS') * 86400
             cur.execute("SELECT COUNT(*) FROM GC_Account WHERE Acc_ID = ?", (acc_id,))
             exists = cur.fetchone()[0] > 0
             if exists:
@@ -773,7 +830,7 @@ def get_access_token(conn):
     
     if admin['refresh'] and admin['refresh_expires'] and now < admin['refresh_expires']:
         logger.debug("Refreshing access token...")
-        response = requests.post(f"{API_BASE_URL}/token/refresh/", json={"refresh": admin['refresh']})
+        response = requests.post(f"{get_config('API_BASE_URL')}/token/refresh/", json={"refresh": admin['refresh']})
         if response.status_code != 200:
             logger.error(f"Failed to refresh token: {response.status_code} {response.text}")
             raise ValueError(f"Failed to refresh token: {response.status_code} {response.text}")
@@ -783,8 +840,8 @@ def get_access_token(conn):
             'secret_key': admin['secret_key'],
             'access': token_data['access'],
             'refresh': token_data.get('refresh', admin['refresh']),
-            'access_expires': now + token_data['access_expires'] - TOKEN_MARGIN,
-            'refresh_expires': now + token_data.get('refresh_expires', admin['refresh_expires']) - TOKEN_MARGIN
+            'access_expires': now + token_data['access_expires'] - get_config('TOKEN_MARGIN'),
+            'refresh_expires': now + token_data.get('refresh_expires', admin['refresh_expires']) - get_config('TOKEN_MARGIN')
         }
     else:
         if not admin['secret_id'] or not admin['secret_key']:
@@ -792,7 +849,7 @@ def get_access_token(conn):
             raise ValueError("Invalid or missing Secret_ID/Secret_Key in GC_Admin.")
         logger.debug("Generating new access token...")
         response = requests.post(
-            f"{API_BASE_URL}/token/new/",
+            f"{get_config('API_BASE_URL')}/token/new/",
             json={"secret_id": admin['secret_id'], "secret_key": admin['secret_key']}
         )
         if response.status_code != 200:
@@ -804,8 +861,8 @@ def get_access_token(conn):
             'secret_key': admin['secret_key'],
             'access': token_data['access'],
             'refresh': token_data['refresh'],
-            'access_expires': now + token_data['access_expires'] - TOKEN_MARGIN,
-            'refresh_expires': now + token_data['refresh_expires'] - TOKEN_MARGIN
+            'access_expires': now + token_data['access_expires'] - get_config('TOKEN_MARGIN'),
+            'refresh_expires': now + token_data['refresh_expires'] - get_config('TOKEN_MARGIN')
         }
     
     cur.execute("SELECT COUNT(*) FROM GC_Admin")
@@ -836,7 +893,7 @@ def fetch_transactions(access_token, requisition_id, output_file, fetch_days, co
     date_from = (datetime.now() - timedelta(days=fetch_days)).strftime("%Y-%m-%d")
     
     # Get requisition data
-    response = requests.get(f"{API_BASE_URL}/requisitions/{requisition_id}/", headers=headers)
+    response = requests.get(f"{get_config('API_BASE_URL')}/requisitions/{requisition_id}/", headers=headers)
     if response.status_code != 200:
         logger.error(f"Error fetching requisition {requisition_id}: {response.status_code} {response.text}")
         if response.status_code in (403, 404):  # Invalid or expired requisition
@@ -862,7 +919,7 @@ def fetch_transactions(access_token, requisition_id, output_file, fetch_days, co
         logger.debug(f"Fetching transactions for account {account_id}")
         try:
             response = requests.get(
-                f"{API_BASE_URL}/accounts/{account_id}/transactions/",
+                f"{get_config('API_BASE_URL')}/accounts/{account_id}/transactions/",
                 headers=headers,
                 params={"date_from": date_from}
             )

@@ -5,15 +5,14 @@ import shutil
 from datetime import datetime
 from calendar import monthrange
 import logging
+from config import get_config
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Set Database Path during development
-DB_PATH = "C:/HA-Data/data/HAdata.db"
-
 # Open and Close DB connection
 def open_db():
+    """Open the SQLite database, handling both script and .exe modes."""
     if getattr(sys, 'frozen', False):
         # Running as .exe
         base_path = sys._MEIPASS
@@ -27,15 +26,14 @@ def open_db():
             shutil.copy(db_source, db_path)
     else:
         # Running as script
-        #base_path = os.path.dirname(os.path.dirname(__file__))
-        #db_path = os.path.join(base_path, "data", "HAdata.db")
-        db_path = DB_PATH
+        db_path = get_config('DB_PATH')
+    
     try:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         return conn, cursor
     except sqlite3.Error as e:
-        raise Exception(f"Failed to open database: {e}")
+        raise Exception(f"Failed to open database: {e}")    
     
 def close_db(conn):
     if conn:
@@ -45,15 +43,15 @@ def close_db(conn):
 # Transaction Table
 def insert_transaction(cursor, conn, tr_type, day, month, year, status, flag, amount, desc, acc_from, acc_to, cat_pid=None, subcat_cid=None, reg_id=0):
     cursor.execute("INSERT INTO Trans (Tr_Type, Tr_Reg_ID, Tr_DOW, Tr_Day, Tr_Month, Tr_Year, Tr_Stat, Tr_Query_Flag, Tr_Amount, Tr_Desc, Tr_Acc_From, Tr_Acc_To, Tr_Exp_ID, Tr_ExpSub_ID) "
-                   "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                   (tr_type, reg_id, 0, day, month, year, status, flag, amount, desc, acc_from, acc_to, cat_pid, subcat_cid))
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (tr_type, reg_id, 0, day, month, year, status, flag, amount, desc, acc_from, acc_to, cat_pid, subcat_cid))
     conn.commit()
     return cursor.lastrowid
 
 def update_transaction(cursor, conn, tr_id, tr_type, day, month, year, status, flag, amount, desc, acc_from, acc_to, cat_pid=None, subcat_cid=None):
     cursor.execute("UPDATE Trans SET Tr_Type=?, Tr_Reg_ID=?, Tr_DOW=?, Tr_Day=?, Tr_Month=?, Tr_Year=?, Tr_Stat=?, Tr_Query_Flag=?, Tr_Amount=?, Tr_Desc=?, Tr_Acc_From=?, Tr_Acc_To=?, Tr_Exp_ID=?, Tr_ExpSub_ID=? "
-                   "WHERE Tr_ID=?",
-                   (tr_type, 0, 0, day, month, year, status, flag, amount, desc, acc_from, acc_to, cat_pid, subcat_cid, tr_id))
+                "WHERE Tr_ID=?",
+                (tr_type, 0, 0, day, month, year, status, flag, amount, desc, acc_from, acc_to, cat_pid, subcat_cid, tr_id))
     conn.commit()
 
 def delete_transaction(cursor, conn, tr_id):
@@ -67,8 +65,8 @@ def fetch_month_rows(cursor, month, year, accounts, account_data):
     ff_flag = ff_rows[0]
 
     cursor.execute("SELECT Tr_ID, Tr_Type, Tr_Reg_ID, Tr_Day, Tr_Month, Tr_Year, Tr_Stat, Tr_Query_Flag, Tr_Amount, "
-                   "Tr_Desc, Tr_Exp_ID, Tr_ExpSub_ID, Tr_Acc_From, Tr_Acc_To, Tr_FF_Journal_ID "
-                   "FROM Trans WHERE Tr_Year = ? AND Tr_Month = ? ORDER BY Tr_Day ASC, Tr_Stat DESC", (year, month))
+                "Tr_Desc, Tr_Exp_ID, Tr_ExpSub_ID, Tr_Acc_From, Tr_Acc_To, Tr_FF_Journal_ID "
+                "FROM Trans WHERE Tr_Year = ? AND Tr_Month = ? ORDER BY Tr_Day ASC, Tr_Stat DESC", (year, month))
     db_rows = cursor.fetchall()
     rows = []
     daily_balances = [float(acc[2]) if acc[2] is not None else 0.0 for acc in account_data]
@@ -294,9 +292,9 @@ def copy_accounts_from_previous_year(cursor, conn, target_year):
     prev_year = target_year - 1
     cursor.execute("""
         INSERT INTO Account (Acc_ID, Acc_Year, Acc_Type, Acc_Name, Acc_Short_Name, Acc_Last4, Acc_Credit_Limit, 
-                             Acc_Colour, Acc_Open, Acc_Statement_Date, Acc_Prev_Month)
+                            Acc_Colour, Acc_Open, Acc_Statement_Date, Acc_Prev_Month)
         SELECT Acc_ID, ?, Acc_Type, Acc_Name, Acc_Short_Name, Acc_Last4, Acc_Credit_Limit, 
-               Acc_Colour, Acc_Open, Acc_Statement_Date, Acc_Prev_Month
+                            Acc_Colour, Acc_Open, Acc_Statement_Date, Acc_Prev_Month
         FROM Account WHERE Acc_Year = ?
     """, (target_year, prev_year))
     conn.commit()
@@ -307,7 +305,7 @@ def bring_forward_opening_balances(cursor, conn, current_year):
     # Fetch prior year's data
     cursor.execute("""
         SELECT Acc_ID, Acc_Open, Acc_Jan, Acc_Feb, Acc_Mar, Acc_Apr, Acc_May, Acc_Jun, 
-               Acc_Jul, Acc_Aug, Acc_Sep, Acc_Oct, Acc_Nov, Acc_Dec
+                Acc_Jul, Acc_Aug, Acc_Sep, Acc_Oct, Acc_Nov, Acc_Dec
         FROM Account WHERE Acc_Year = ?
     """, (prev_year,))
     prior_accounts = cursor.fetchall()
@@ -467,9 +465,9 @@ def fetch_transaction_sums(cursor, month, year, accounts):
 
 def fetch_statement_balances(cursor, month, year, accounts):
     cursor.execute("SELECT Acc_ID, Acc_Short_Name, Acc_Open, Acc_Statement_Date, Acc_Prev_Month, "
-                   "Acc_Jan, Acc_Feb, Acc_Mar, Acc_Apr, Acc_May, Acc_Jun, "
-                   "Acc_Jul, Acc_Aug, Acc_Sep, Acc_Oct, Acc_Nov, Acc_Dec "
-                   "FROM Account WHERE Acc_Year = ? ORDER BY Acc_ID", (year,))
+                "Acc_Jan, Acc_Feb, Acc_Mar, Acc_Apr, Acc_May, Acc_Jun, "
+                "Acc_Jul, Acc_Aug, Acc_Sep, Acc_Oct, Acc_Nov, Acc_Dec "
+                "FROM Account WHERE Acc_Year = ? ORDER BY Acc_ID", (year,))
     account_data = cursor.fetchall()
     acc_map = {row[1]: row[0] for row in account_data}
     

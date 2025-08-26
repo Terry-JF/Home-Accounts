@@ -3,7 +3,6 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import datetime
 import logging
-
 from db import  (fetch_years, fetch_categories, fetch_subcategories, fetch_actuals)
 from ui_utils import (COLORS, TEXT_COLORS, open_form_with_position, close_form_with_position)
 

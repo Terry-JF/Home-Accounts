@@ -3,10 +3,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import datetime
 import logging
-
 from db import (fetch_years, fetch_accounts_by_year, insert_account, update_account, fetch_month_rows, save_window_position,
                 fetch_lookup_values, copy_accounts_from_previous_year, bring_forward_opening_balances)
-
 from ui_utils import (refresh_grid, resource_path, open_form_with_position, close_form_with_position)
 
 # Setup logging
@@ -25,11 +23,7 @@ try:
 except Exception as e:
     logging.warning(f"Failed to set DPI awareness: {e}")
 
-# Configuration
-REQUISITION_VALIDITY_DAYS = 90                      # GoCardless requisition validity
-EXPIRY_WARNING_DAYS = 7                             # Warn if expiry within 7 days    
-
-# Form Function to Win_ID Mappings
+######  Form Function to Win_ID Mappings
 # Below forms are in this file
 #  1: create_account_maint_form - "Manage Accounts"                                 300
 #  2: create_category_maint_form - "Manage Income/Expense Categories"                   10

@@ -12,6 +12,7 @@ from db import  (open_db, close_db, fetch_month_rows, fetch_transaction_sums, fe
                 update_account_year_transactions)
 from ui_utils import (COLORS, TEXT_COLORS, refresh_grid, open_form_with_position, close_form_with_position, resource_path)
 from focus_forms import (create_summary_form)
+from config import (init_config, get_config)
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -35,7 +36,10 @@ def main():
     )
     logger = logging.getLogger()
     logger.debug("Starting HA application")
-        
+    
+    # Initialize configuration
+    init_config() 
+    
     # Open database connection
     conn, cursor = open_db()
     
