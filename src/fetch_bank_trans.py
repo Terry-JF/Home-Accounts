@@ -4,10 +4,10 @@
 import logging
 import os
 from datetime import datetime
-from src.config import get_config, init_config
-from src.db import open_db
-from src.gc_utils import get_access_token, fetch_transactions
-from src.rules_engine import process_transactions
+from config import get_config, init_config
+from db import open_db
+from gc_utils import get_access_token, fetch_transactions
+from rules_engine import process_transactions, cleanup_ha_import
 
 # Initialize configuration (sets up logging and directories)
 init_config()
@@ -43,6 +43,9 @@ def main():
             logger.debug(f"Processing transactions for account {acc_id}")
             process_transactions(json_path, conn, acc_id)
             logger.debug(f"Completed processing for account {acc_id}")
+            
+        # Cleanup old HA_Import records
+        cleanup_ha_import(conn, days=30)
             
         conn.close()
     except Exception as e:

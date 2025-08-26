@@ -193,6 +193,13 @@ CREATE TABLE "Regular" (
 	"Reg_Query_Flag"	INTEGER,
 	PRIMARY KEY("Reg_ID" AUTOINCREMENT)
 )
+CREATE TABLE "Rule_Tags" (
+    "Tag_ID" INTEGER,
+    "Rule_ID" INTEGER NOT NULL,
+    "Tag_Text" TEXT NOT NULL,
+    PRIMARY KEY("Tag_ID" AUTOINCREMENT),
+    FOREIGN KEY("Rule_ID") REFERENCES "Rules"("Rule_ID")
+)
 CREATE TABLE "RuleGroups" (
 	"Group_ID"	INTEGER,
 	"Group_Name"	TEXT NOT NULL,
