@@ -1,5 +1,8 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
+from datetime import datetime
+import time
+import sqlite3
 import requests
 import webbrowser
 import subprocess
@@ -10,9 +13,10 @@ import os
 import logging
 from datetime import datetime, timedelta
 from uuid import uuid4
-from ui_utils import (COLORS, resource_path, open_form_with_position, close_form_with_position, center_window)
+from ui_utils import (resource_path, open_form_with_position, close_form_with_position, center_window)
 from rules_engine import (process_transactions, test_rules)
-from config import CONFIG, get_config
+from config import CONFIG, COLORS, get_config
+import config
 
 # Set up logging
 logger = logging.getLogger('HA.gc_utils')
@@ -108,6 +112,9 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
     form.attributes("-topmost", True)
     open_form_with_position(form, conn, cursor, win_id, "Manage GoCardless Configuration")
     
+    # Get current HA year setting
+    year = int(parent.year_var.get())  # Use global year_var
+    
     # Create notebook for tabs
     notebook = ttk.Notebook(form)
     notebook.pack(pady=10, expand=True, fill="both")
@@ -120,8 +127,7 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
     notebook.add(tab2, text="Windows Scheduler")    
     # Tab 3: Testing GC Import (placeholder)
     tab3 = ttk.Frame(notebook)
-    notebook.add(tab3, text="Testing GC Import")
-    tk.Label(tab3, text="Testing GC Import - To be developed")    
+    notebook.add(tab3, text="Test Rules / Match")
     # Tab 4: Other Settings
     tab4 = ttk.Frame(notebook)
     notebook.add(tab4, text="  Other Settings   ")    
@@ -166,7 +172,10 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
     bank_var = tk.StringVar()
     status_var = tk.StringVar()  # Hidden var for Link Status
     filename_var = tk.StringVar()
+    accounts_var = tk.StringVar()   # list of accounts
+    files_var = tk.StringVar()      # list of files
     
+    # Routines for Tab 1
     # Load accounts
     def init_form():
         gctree.delete(*gctree.get_children())
@@ -219,57 +228,8 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
             acc_id = int(gctree.item(item, "values")[0])
             setup_gc_requisition(conn, acc_id, form, form)
     
-    gctree.bind("<<TreeviewSelect>>", on_gctree_select)
-    gctree.bind("<Double-1>", on_setup_click)
-    
-    # Fields
-    tk.Label(tab1, text="(Click on a row to edit that record)", anchor="w", font=("Arial", 9, "italic"), width=40).place(x=int(20 * scaling_factor), y=int(260 * scaling_factor))
-    tk.Label(tab1, text="(To link HA account to bank account - Double-click on 'Setup')", anchor="e", font=("Arial", 9, "italic"), width=50).place(x=int(430 * scaling_factor), y=int(260 * scaling_factor))
-    
-    tk.Label(tab1, text="Account ID:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(300 * scaling_factor))
-    tk.Label(tab1, textvariable=acc_id_var, anchor="w", width=20).place(x=int(350 * scaling_factor), y=int(300 * scaling_factor))
-    
-    tk.Label(tab1, text="Account Name:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(340 * scaling_factor))
-    tk.Label(tab1, textvariable=acc_name_var, anchor="w", width=20).place(x=int(350 * scaling_factor), y=int(340 * scaling_factor))
-    
-    tk.Label(tab1, text="Account Active:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(380 * scaling_factor))
-    active_combo = ttk.Combobox(tab1, textvariable=active_var, values=["Yes", "No"], width=15, state="readonly")
-    active_combo.place(x=int(350 * scaling_factor), y=int(380 * scaling_factor))
-    
-    tk.Label(tab1, text="Days to Fetch:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(420 * scaling_factor))
-    days_combo = ttk.Combobox(tab1, textvariable=days_var, values=days_values, width=15, state="readonly")
-    days_combo.place(x=int(350 * scaling_factor), y=int(420 * scaling_factor))
-    tk.Label(tab1, text="(max 30 to save)", anchor="w", font=("Arial", 9, "italic"), width=20).place(x=int(480 * scaling_factor), y=int(420 * scaling_factor))
-    
-    tk.Label(tab1, text="Bank Name:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(460 * scaling_factor))
-    tk.Label(tab1, textvariable=bank_var, anchor="w", width=20).place(x=int(350 * scaling_factor), y=int(460 * scaling_factor))
-    
-    # Fetch Now Button (initially disabled)
-    fetch_button = tk.Button(tab1, text="Fetch Now", width=20, state="disabled", command=lambda: fetch_now())
-    fetch_button.place(x=int(550 * scaling_factor), y=int(380 * scaling_factor))
-
-    ####### Test sub-form Button+edit - remove after testing ###################
-    
-    test_button = tk.Button(tab1, text="Show Sample json", width=25, command=lambda: show_now())
-    test_button.place(x=int(550 * scaling_factor), y=int(495 * scaling_factor))
-    tk.Label(tab1, text="Sample File Name:", anchor="e", width=20).place(x=int(80 * scaling_factor), y=int(500 * scaling_factor))
-    tk.Entry(tab1, textvariable=filename_var, width=40).place(x=int(250 * scaling_factor), y=int(500 * scaling_factor))
-
-    test_rules_button = tk.Button(tab1, text="Test Rules on JSON", width=25, command=lambda: test_rules_now())
-    test_rules_button.place(x=int(550 * scaling_factor), y=int(530 * scaling_factor))
-    test_rules_button = tk.Button(tab1, text="Manage 'pending' Match Strings", width=35, command=lambda: create_mrules_form(form, conn, cursor))
-    test_rules_button.place(x=int(80 * scaling_factor), y=int(530 * scaling_factor))
-    
-    ####### Test sub-form Button - remove after testing ###################
-    
-    # Save and Close Buttons
-    tk.Button(tab1, text="Save", width=15, command=lambda: save_account()).place(
-        x=int(350 * scaling_factor), y=int(600 * scaling_factor))
-    tk.Button(tab1, text="Close", width=15, 
-              command=lambda: close_form_with_position(form, conn, cursor, win_id)).place(x=int(680 * scaling_factor), y=int(600 * scaling_factor))
-    
     def fetch_now():
-        logger = logging.getLogger('HA.transactions')
+        logger = logging.getLogger('HA.fetch_now')
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         log_file = os.path.join(get_config('LOG_DIR'), f"{timestamp}_fetch_transactions.log")
         file_handler = logging.FileHandler(log_file)
@@ -299,7 +259,7 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
                 return
             
             # Temporary json path
-            json_path = os.path.join(get_config('OUTPUT_DIR'), f"{timestamp}_test_transactions_{acc_id}.json")
+            json_path = os.path.join(get_config('BANK_DIR'), f"{timestamp}_test_transactions_{acc_id}.json")
             logger.debug(f"Fetching transactions for account {acc_id} to {json_path}")        
                 
             # Fetch and save to json using fetch_bank_transactions.py
@@ -310,48 +270,6 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
         except Exception as e:
             logger.error(f"Failed to fetch transactions: {str(e)}")
             messagebox.showerror("Error", f"Failed to fetch transactions: {str(e)}", parent=form)
-        finally:
-            logger.removeHandler(file_handler)
-            file_handler.close()
-                        
-    def show_now():
-        logger = logging.getLogger()
-        json_path = os.path.join(get_config('OUTPUT_DIR'), filename_var.get())
-        logger.debug(f"Showing JSON file: {json_path}")
-        if os.path.isfile(json_path):
-            display_transactions_form(form, json_path)
-        else:
-            logger.error(f"Invalid JSON file: {filename_var.get()}")
-            messagebox.showerror("Error", f"{filename_var.get()} - is not valid", parent=form)
-    
-    def test_rules_now():
-        logger = logging.getLogger('HA.transactions')
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = os.path.join(get_config('LOG_DIR'), f"{timestamp}_test_rules.log")
-        file_handler = logging.FileHandler(log_file)
-        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-        logger.addHandler(file_handler)
-        logger.setLevel(logging.DEBUG)        
-        
-        try:
-            if not acc_id_var.get():
-                logger.error("No account selected for rules testing")
-                messagebox.showerror("Error", "No account selected.", parent=form)
-                return
-            acc_id = int(acc_id_var.get())
-            json_path = os.path.join(get_config('OUTPUT_DIR'), filename_var.get())
-            logger.debug(f"Testing rules on: {json_path}")
-            if os.path.isfile(json_path):
-                process_transactions(json_path, conn, acc_id)  # Reprocess JSON
-                results = test_rules(json_path, conn, acc_id)
-                display_test_results(form, results)
-                logger.debug(f"Completed rules testing for {json_path}")
-            else:
-                logger.error(f"Invalid JSON file: {filename_var.get()}")
-                messagebox.showerror("Error", f"{filename_var.get()} - is not valid", parent=form)
-        except Exception as e:
-            logger.error(f"Failed to test rules: {str(e)}")
-            messagebox.showerror("Error", f"Failed to test rules: {str(e)}", parent=form)
         finally:
             logger.removeHandler(file_handler)
             file_handler.close()
@@ -513,42 +431,8 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
         test=resource_path("test")
         logging.debug(f"resource_path: {test}")
     
-    # Scheduler form elements
-    task_name = "FetchBankTransTask"
-    tk.Label(tab2, text="Windows Scheduler can be set to automatically fetch recent", font=("Arial", 11)).place(x=int(200 * scaling_factor), y=int(30 * scaling_factor))
-    tk.Label(tab2, text="    transactions from your banks, up to twice per day.    ", font=("Arial", 11)).place(x=int(200 * scaling_factor), y=int(50 * scaling_factor))
-
-    # Enable/Disable checkbox
-    is_enabled = tk.BooleanVar(value=get_task_status(task_name) != "Not Found")
-    #tk.Checkbutton(tab2, text="Enable Scheduler", variable=is_enabled, font=("Arial", 10)).place(x=int(300 * scaling_factor), y=int(100 * scaling_factor))
-
-    unchecked_img = tk.PhotoImage(file=resource_path("icons/unchecked_16.png")).zoom(int(scaling_factor))
-    checked_img = tk.PhotoImage(file=resource_path("icons/checked_16.png")).zoom(int(scaling_factor))
-
-    tk.Label(tab2, text="Enable Scheduler", anchor=tk.W, width=int(14 * scaling_factor), font=("Arial", 11), 
-             bg=COLORS["very_pale_blue"], fg=COLORS["black"]).place(x=int(330 * scaling_factor), y=int(100 * scaling_factor))
-    if is_enabled:
-        image=checked_img
-    else:
-        image=unchecked_img
-    es_box=tk.Button(tab2, image=image, bg=COLORS["very_pale_blue"], command=toggle_es)
-    es_box.place(x=int(300 * scaling_factor), y=int(100 * scaling_factor))
-    
-    # Time 1 input
-    tk.Label(tab2, text="Run Time 1 (HH:MM AM/PM):", font=("Arial", 10)).place(x=int(200 * scaling_factor), y=int(160 * scaling_factor))
-    time1_entry = tk.Entry(tab2, width=10, font=("Arial", 10))
-    time1_entry.insert(0, "06:30 AM")
-    time1_entry.place(x=int(400 * scaling_factor), y=int(160 * scaling_factor))
-
-    # Time 2 input (optional)
-    tk.Label(tab2, text="Run Time 2 (HH:MM AM/PM):", font=("Arial", 10)).place(x=int(200 * scaling_factor), y=int(220 * scaling_factor))
-    time2_entry = tk.Entry(tab2, width=10, font=("Arial", 10))
-    time2_entry.insert(0, "")
-    time2_entry.place(x=int(400 * scaling_factor), y=int(220 * scaling_factor))
-    tk.Label(tab2, text="(optional)", font=("Arial", 10)).place(x=int(500 * scaling_factor), y=int(220 * scaling_factor))
-    
-    # Save and Delete buttons
-    def save_schedule():
+    # Save and Delete buttons - Tab 2
+    def save_schedule():                        # Tab 2
         time1 = time1_entry.get().strip()
         time2 = time2_entry.get().strip()
         if not validate_time_format(time1):
@@ -563,35 +447,130 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
         else:
             messagebox.showerror("Error", "Failed to schedule task.")
 
-    def delete_schedule():
+    def delete_schedule():                      # Tab 2
         if delete_task(task_name):
             is_enabled.set(False)
             messagebox.showinfo("Success", "Task deleted successfully.")
         else:
             messagebox.showerror("Error", "Failed to delete task.")
 
-    tk.Button(tab2, text="Save Schedule", width=20,font=("Arial", 10), command=save_schedule).place(x=int(200 * scaling_factor), y=int(300 * scaling_factor))
-    tk.Button(tab2, text="Delete Task", width=20,font=("Arial", 10), command=delete_schedule).place(x=int(400 * scaling_factor), y=int(300 * scaling_factor))
+    # Functions for Tab 3
+
+# Tab 3 Functions
+    def populate_accounts_combo(cursor, accounts_var, accounts_combo):
+        """Populate accounts combo with Acc_ID, Acc_Name, Bank_Name, Link_Status."""
+        cursor.execute("""
+            SELECT a.Acc_ID, a.Acc_Name, gc.Bank_Name, gc.Link_Status
+            FROM Account a
+            LEFT JOIN GC_Account gc ON a.Acc_ID = gc.Acc_ID
+            WHERE a.Acc_Year = ? AND a.Acc_ID < 13
+            ORDER BY a.Acc_ID
+        """, (datetime.now().year,))
+        accounts = [
+            f"{row[0]}: {row[1]} ({row[2] or 'No Bank'}, {row[3] or 'Not Set'})"
+            for row in cursor.fetchall()
+        ]
+        accounts_var.set("")
+        accounts_combo['values'] = accounts
+        if accounts:
+            accounts_var.set(accounts[0])
+        logging.debug(f"Populated accounts combo: {accounts}")
+
+    def count_transaction_ids(data):
+        """Recursively count objects with 'transactionId' key in JSON data."""
+        count = 0
+        if isinstance(data, dict):
+            if "transactionId" in data:
+                count += 1
+            for value in data.values():
+                count += count_transaction_ids(value)
+        elif isinstance(data, list):
+            for item in data:
+                count += count_transaction_ids(item)
+        return count
     
-    tk.Button(tab2, text="Close - without making changes", width=30, font=("Arial", 10),
-              command=lambda: close_form_with_position(form, conn, cursor, win_id)).place(x=int(500 * scaling_factor), y=int(500 * scaling_factor))
-    
-    # Other Settings form elements
+    def populate_files_combo(cursor, accounts_var, files_var, scaling_factor):
+        """Populate files combo with JSON files for the selected account."""
+        if not accounts_var.get():
+            files_var.set("")
+            files_combo['values'] = []
+            return
+        acc_id = accounts_var.get().split(":")[0].strip()  # Extract Acc_ID
+        bank_dir = get_config('BANK_DIR')
+        files = []
+        try:
+            for filename in os.listdir(bank_dir):
+                if filename.endswith(f"_transactions_{acc_id}.json"):
+                    filepath = os.path.join(bank_dir, filename)
+                    try:
+                        # Extract date/time from filename (assuming YYYYMMDD_HHMMSS_AccID.json)
+                        date_str = filename[:15]  # e.g., "20250827_120000"
+                        import_date = datetime.strptime(date_str, "%Y%m%d_%H%M%S")
+                        # Count records in JSON
+                        with open(filepath, 'r') as f:
+                            data = json.load(f)
+                            record_count = count_transaction_ids(data)
+                        files.append(f"{filename} ({import_date.strftime('%Y-%m-%d %H:%M:%S')}, {record_count} records)")
+                    except (ValueError, json.JSONDecodeError) as e:
+                        logging.error(f"Error processing {filename}: {e}")
+                        continue
+            files_var.set("")
+            files_combo['values'] = sorted(files, reverse=True)  # Newest first
+            if files:
+                files_var.set(files[0])
+            logging.debug(f"Populated files combo for Acc_ID {acc_id}: {files}")
+        except OSError as e:
+            logging.error(f"Error accessing {bank_dir}: {e}")
+            files_combo['values'] = []
+            files_var.set("")
 
-    # Expiry Warning Days
-    tk.Label(tab4, text="Expiry Warning Days:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
-    expiry_entry = tk.Entry(tab4, width=10)
-    expiry_entry.insert(0, str(get_config('EXPIRY_WARNING_DAYS')))
-    expiry_entry.grid(row=0, column=1, padx=5, pady=5)
+    def show_now():
+        """Display the selected JSON file's contents in a new window."""
+        if not files_var.get():
+            messagebox.showerror("Error", "Please select a JSON file.")
+            return
+        filename = files_var.get().split(" (")[0]  # Extract filename
+        filepath = os.path.join(get_config('BANK_DIR'), filename)
+        try:
+            with open(filepath, 'r') as f:
+                data = json.load(f)
+            # Create a new window to display JSON
+            json_window = tk.Toplevel(form)
+            json_window.title(f"JSON Content: {filename}")
+            json_window.geometry(f"{int(1000 * scaling_factor)}x{int(600 * scaling_factor)}+{int(400 * scaling_factor)}+{int(200 * scaling_factor)}")
+            json_window.transient(form)  # Set as transient to parent form
+            json_window.attributes("-topmost", True)  # Ensure on top
+            json_window.focus_set()  # Set focus to window
+            text_area = tk.Text(json_window, wrap="none", font=("Courier", 10))
+            text_area.insert("1.0", json.dumps(data, indent=2))
+            text_area.config(state="disabled")
+            text_area.pack(expand=True, fill="both", padx=10, pady=10)
+            tk.Button(json_window, text="Close", width=15, command=json_window.destroy).pack(pady=10)
+            logging.debug(f"Displayed JSON file: {filepath}")
+        except (OSError, json.JSONDecodeError) as e:
+            messagebox.showerror("Error", f"Failed to load JSON file: {e}")
+            logging.error(f"Failed to load {filepath}: {e}")
 
-    # Log Days to Keep
-    tk.Label(tab4, text="Log Days to Keep:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
-    log_days_entry = tk.Entry(tab4, width=10)
-    log_days_entry.insert(0, str(get_config('LOG_DAYS_TO_KEEP')))
-    log_days_entry.grid(row=1, column=1, padx=5, pady=5)
+    def test_rules_now():
+        """Import the selected JSON file into the database."""
+        if not files_var.get():
+            messagebox.showerror("Error", "Please select a JSON file.")
+            return
+        filename = files_var.get().split(" (")[0]  # Extract filename
+        filepath = os.path.join(get_config('BANK_DIR'), filename)
+        acc_id = accounts_var.get().split(":")[0].strip()  # Extract Acc_ID
+        try:
+            db_path = get_config('DB_PATH_TEST' if get_config('APP_ENV') == 'test' else 'DB_PATH')
+            process_transactions(filepath, conn, acc_id)  # process JSON file
+            messagebox.showinfo("Success", f"Imported {filename} successfully. \n See LOGS/app.log for details", parent=form)
+            logging.debug(f"Imported JSON file: {filepath} to {db_path}")
+        except (OSError, json.JSONDecodeError, sqlite3.Error) as e:
+            messagebox.showerror("Error", f"Failed to import JSON file: {e}")
+            logging.error(f"Failed to import {filepath}: {e}")
 
-    # Save Settings button
-    def save_settings():
+
+    # Save Settings button - Tab 4
+    def save_settings():                        # Tab 4
         try:
             expiry_days = int(expiry_entry.get())
             log_days = int(log_days_entry.get())
@@ -609,11 +588,138 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
         except cursor.Error as e:
             messagebox.showerror("Error", f"Failed to update settings: {e}")
 
-    tk.Button(tab4, text="Save Settings", command=save_settings).grid(row=2, column=0, columnspan=2, padx=5, pady=10)
+    ###### TAB LAYOUTS
     
+    # Tab 1 Layout - Manage GC settings for each Account
+    ###################################################################
+    gctree.bind("<<TreeviewSelect>>", on_gctree_select)
+    gctree.bind("<Double-1>", on_setup_click)
+    
+    tk.Label(tab1, text="(Click on a row to edit that record)", anchor="w", font=("Arial", 9, "italic"), width=40).place(x=int(20 * scaling_factor), y=int(260 * scaling_factor))
+    tk.Label(tab1, text="(To link HA account to bank account - Double-click on 'Setup')", anchor="e", font=("Arial", 9, "italic"), width=50).place(x=int(430 * scaling_factor), y=int(260 * scaling_factor))
+    
+    tk.Label(tab1, text="Account ID:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(300 * scaling_factor))
+    tk.Label(tab1, textvariable=acc_id_var, anchor="w", width=20).place(x=int(350 * scaling_factor), y=int(300 * scaling_factor))
+    
+    tk.Label(tab1, text="Account Name:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(340 * scaling_factor))
+    tk.Label(tab1, textvariable=acc_name_var, anchor="w", width=20).place(x=int(350 * scaling_factor), y=int(340 * scaling_factor))
+    
+    tk.Label(tab1, text="Account Active:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(380 * scaling_factor))
+    active_combo = ttk.Combobox(tab1, textvariable=active_var, values=["Yes", "No"], width=15, state="readonly")
+    active_combo.place(x=int(350 * scaling_factor), y=int(380 * scaling_factor))
+    
+    tk.Label(tab1, text="Days to Fetch:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(420 * scaling_factor))
+    days_combo = ttk.Combobox(tab1, textvariable=days_var, values=days_values, width=15, state="readonly")
+    days_combo.place(x=int(350 * scaling_factor), y=int(420 * scaling_factor))
+    tk.Label(tab1, text="(max 30 to save)", anchor="w", font=("Arial", 9, "italic"), width=20).place(x=int(480 * scaling_factor), y=int(420 * scaling_factor))
+    
+    tk.Label(tab1, text="Bank Name:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(460 * scaling_factor))
+    tk.Label(tab1, textvariable=bank_var, anchor="w", width=20).place(x=int(350 * scaling_factor), y=int(460 * scaling_factor))
+    
+    # Fetch Now Button (initially disabled)
+    fetch_button = tk.Button(tab1, text="Fetch Now", width=20, state="disabled", command=lambda: fetch_now())
+    fetch_button.place(x=int(550 * scaling_factor), y=int(380 * scaling_factor))
+
+    ####### Manage 'pending' match string - move to rules - somewhere? ###################
+    
+    test_rules_button = tk.Button(tab1, text="Manage 'pending' Match Strings", width=35, command=lambda: create_mrules_form(form, conn, cursor))
+    test_rules_button.place(x=int(80 * scaling_factor), y=int(530 * scaling_factor))
+    
+    ####### Manage 'pending' match string - move to rules - somewhere? ###################
+    
+    # Save and Close Buttons
+    tk.Button(tab1, text="Save", width=15, command=lambda: save_account()).place(
+        x=int(350 * scaling_factor), y=int(600 * scaling_factor))
+    tk.Button(tab1, text="Close", width=15, command=lambda: close_gocardless_form(form, conn, cursor, win_id, parent)).place(x=int(680 * scaling_factor), y=int(600 * scaling_factor))
+    
+    ###################################################################
+    # Tab 2 Layout - Task Scheduler settings
+    task_name = "FetchBankTransTask"
+    tk.Label(tab2, text="Windows Scheduler can be set to automatically fetch recent", font=("Arial", 11)).place(x=int(200 * scaling_factor), y=int(30 * scaling_factor))
+    tk.Label(tab2, text="    transactions from your banks, up to twice per day.    ", font=("Arial", 11)).place(x=int(200 * scaling_factor), y=int(50 * scaling_factor))
+
+    # Enable/Disable checkbox
+    is_enabled = tk.BooleanVar(value=get_task_status(task_name) != "Not Found")
+    #tk.Checkbutton(tab2, text="Enable Scheduler", variable=is_enabled, font=("Arial", 10)).place(x=int(300 * scaling_factor), y=int(100 * scaling_factor))
+
+    unchecked_img = tk.PhotoImage(file=resource_path("icons/unchecked_16.png")).zoom(int(scaling_factor))
+    checked_img = tk.PhotoImage(file=resource_path("icons/checked_16.png")).zoom(int(scaling_factor))
+
+    tk.Label(tab2, text="Enable Scheduler", anchor=tk.W, width=int(14 * scaling_factor), font=("Arial", 11), 
+             bg=config.master_bg, fg=COLORS["black"]).place(x=int(330 * scaling_factor), y=int(100 * scaling_factor))
+    if is_enabled:
+        image=checked_img
+    else:
+        image=unchecked_img
+    es_box=tk.Button(tab2, image=image, bg=config.master_bg, command=toggle_es)
+    es_box.place(x=int(300 * scaling_factor), y=int(100 * scaling_factor))
+    
+    # Time 1 input
+    tk.Label(tab2, text="Run Time 1 (HH:MM AM/PM):", font=("Arial", 10)).place(x=int(200 * scaling_factor), y=int(160 * scaling_factor))
+    time1_entry = tk.Entry(tab2, width=10, font=("Arial", 10))
+    time1_entry.insert(0, "06:30 AM")
+    time1_entry.place(x=int(400 * scaling_factor), y=int(160 * scaling_factor))
+
+    # Time 2 input (optional)
+    tk.Label(tab2, text="Run Time 2 (HH:MM AM/PM):", font=("Arial", 10)).place(x=int(200 * scaling_factor), y=int(220 * scaling_factor))
+    time2_entry = tk.Entry(tab2, width=10, font=("Arial", 10))
+    time2_entry.insert(0, "")
+    time2_entry.place(x=int(400 * scaling_factor), y=int(220 * scaling_factor))
+    tk.Label(tab2, text="(optional)", font=("Arial", 10)).place(x=int(500 * scaling_factor), y=int(220 * scaling_factor))
+    
+    tk.Button(tab2, text="Save Schedule", width=20,font=("Arial", 10), command=save_schedule).place(x=int(200 * scaling_factor), y=int(300 * scaling_factor))
+    tk.Button(tab2, text="Delete Task", width=20,font=("Arial", 10), command=delete_schedule).place(x=int(400 * scaling_factor), y=int(300 * scaling_factor))
+    
+    tk.Button(tab2, text="Close - without making changes", width=30, font=("Arial", 10),
+              command=lambda: close_gocardless_form(form, conn, cursor, win_id, parent)).place(x=int(500 * scaling_factor), y=int(500 * scaling_factor))
+    
+    # Tab 3 Layout - Test Rules and Matching
+    ###################################################################
+    # Populate accounts combo
+    tk.Label(tab3, text="Choose Account:", anchor="e", width=15).place(x=int(100 * scaling_factor), y=int(100 * scaling_factor))
+    accounts_combo = ttk.Combobox(tab3, textvariable=accounts_var, width=50, state="readonly")
+    accounts_combo.place(x=int(260 * scaling_factor), y=int(100 * scaling_factor))
+    
+    populate_accounts_combo(cursor, accounts_var, accounts_combo)
+    
+    # Populate files combo when account changes
+    def on_account_select(event):
+        populate_files_combo(cursor, accounts_var, files_var, scaling_factor)
+    accounts_combo.bind("<<ComboboxSelected>>", on_account_select)
+
+    tk.Label(tab3, text="Choose File Name:", anchor="e", width=15).place(x=int(100 * scaling_factor), y=int(175 * scaling_factor))
+    files_combo = ttk.Combobox(tab3, textvariable=files_var, width=60, state="readonly")
+    files_combo.place(x=int(260 * scaling_factor), y=int(175 * scaling_factor))
+
+    show_button = tk.Button(tab3, text="Show JSON file", width=25, command=lambda: show_now())
+    show_button.place(x=int(300 * scaling_factor), y=int(250 * scaling_factor))
+
+    test_import_button = tk.Button(tab3, text="Import JSON file", width=25, command=lambda: test_rules_now())
+    test_import_button.place(x=int(300 * scaling_factor), y=int(300 * scaling_factor))
+
+    tk.Button(tab3, text="Close", width=15, 
+            command=lambda: close_gocardless_form(form, conn, cursor, win_id, parent)).place(x=int(330 * scaling_factor), y=int(380 * scaling_factor))
+    
+    ###################################################################
+    # Tab 4 Layout - 
+    # Expiry Warning Days
+    tk.Label(tab4, text="Expiry Warning Days:").place(x=int(250 * scaling_factor), y=int(100 * scaling_factor))
+    expiry_entry = tk.Entry(tab4, width=10)
+    expiry_entry.insert(0, str(get_config('EXPIRY_WARNING_DAYS')))
+    expiry_entry.place(x=int(400 * scaling_factor), y=int(100 * scaling_factor))
+
+    # Log Days to Keep
+    tk.Label(tab4, text="Log Days to Keep:").place(x=int(250 * scaling_factor), y=int(200 * scaling_factor))
+    log_days_entry = tk.Entry(tab4, width=10)
+    log_days_entry.insert(0, str(get_config('LOG_DAYS_TO_KEEP')))
+    log_days_entry.place(x=int(400 * scaling_factor), y=int(200 * scaling_factor))
+
+    tk.Button(tab4, text="Save Settings", width=20, command=save_settings).place(x=int(300 * scaling_factor), y=int(300 * scaling_factor))
     
     init_form()
-    form.wait_window()
+    
+    form.protocol("WM_DELETE_WINDOW", lambda: close_gocardless_form(form, conn, cursor, win_id, parent))
+    form.wait_window(form)
 
 def create_mrules_form(parent, conn, cursor):
     form = tk.Toplevel(parent)
@@ -700,7 +806,7 @@ def check_requisition_status(conn, requisition_id, parent, progress_dialog=None)
         return None
 
 def setup_gc_requisition(conn, acc_id, parent, form):
-    logger = logging.getLogger()
+    logger = logging.getLogger('HA.setup_gc_requisition')
     cur = conn.cursor()
     cur.execute("""
         SELECT a.Acc_Name, gc.Country_Code
@@ -814,7 +920,7 @@ def setup_gc_requisition(conn, acc_id, parent, form):
     form.after(0, lambda: poll_status(60))
 
 def get_access_token(conn):
-    logger = logging.getLogger('HA.transactions')
+    logger = logging.getLogger('HA.get_access_token')
     logger.debug("Getting access token")
     
     cur = conn.cursor()
@@ -884,7 +990,7 @@ def get_access_token(conn):
     return new_data['access']
 
 def fetch_transactions(access_token, requisition_id, output_file, fetch_days, conn, acc_id):
-    logger = logging.getLogger('HA.transactions')
+    logger = logging.getLogger('HA.fetch_transactions')
     logger.debug("Fetching transactions from GC")
     
     headers = {"Authorization": f"Bearer {access_token}"}
@@ -953,8 +1059,10 @@ def fetch_transactions(access_token, requisition_id, output_file, fetch_days, co
     else:
         logger.debug(f"No transactions found for requisition {requisition_id}")
 
-
-
+def close_gocardless_form(form, conn, cursor, win_id, root):
+    root.refresh_home()  # Call go_to_today() to refresh Home Form
+    logger.debug("Triggered Home Form refresh after import")
+    close_form_with_position(form, conn, cursor, win_id)
 
 
 

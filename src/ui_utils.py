@@ -7,33 +7,6 @@ from tkcalendar import Calendar
 import os
 from db import (get_window_position, save_window_position)
 
-# Colour palettes
-COLORS = {
-    "white": "#FFFFFF",             # Weekday BG, Active Tab Text, Daily Totals Text, Non-Active Tab BG
-    "oldlace": "#DEE7DF",           # Weekend BG
-    "yellow": "#FFFF80",            # Flag 1
-    "green": "#80FF80",             # Flag 2
-    "cyan": "#B9FFFF",              # Flag 4
-    "marker": "#ED87ED",            # Row Marker
-    "pale_blue": "#ADD8E6",         # was "#DFFFFF" - Exit Button
-    "very_pale_blue": "#DFFFFF",    # Main Form BG - was #E6F0FA
-    "red": "#DD0000",               # was "#FAA0A0" - Daily Totals OD Text
-    "dark_grey": "#5D5D5D",         # Daily Totals BG
-    "pink": "#FADBFD",              # Daily Totals OD BG
-    "black": "#000000",             # Non-Active Tab Text
-    "dark_brown": "#803624",        # Active Tab BG
-    "orange": "#FFC993",            # Drill Down Marker
-    "grey": "#E0E0E0",              # AHB row 8 background
-    "pale_green": "#E0FFE0"         # AHB row 3 background
-}
-
-TEXT_COLORS = {                     # used for transaction status
-    "Unknown": "gray",
-    "Forecast": "#800040",          # Brown
-    "Processing": "#0000FF",        # Blue
-    "Complete": "#000000"           # Black 
-}
-
 # Set up logging
 logger = logging.getLogger('HA.ui_utils')
 

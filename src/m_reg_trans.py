@@ -5,11 +5,12 @@ from datetime import datetime
 from tkcalendar import Calendar
 import logging
 import ast
-
+from config import COLORS, TEXT_COLORS
 from db import  (fetch_years, fetch_subcategories, fetch_regular_for_year, fetch_category_name, fetch_subcategory_name, fetch_account_full_name,
                 delete_transaction, fetch_regular_by_id, fetch_account_full_names, fetch_inc_categories, fetch_exp_categories, fetch_category_id,
                 fetch_subcategory_id, fetch_account_id_by_name)
-from ui_utils import (COLORS, TEXT_COLORS, open_form_with_position, close_form_with_position)
+from ui_utils import (open_form_with_position, close_form_with_position)
+import config
 
 # Set up logging
 logger = logging.getLogger('HA.m_reg_trans')
@@ -35,7 +36,7 @@ def create_regular_transactions_maint_form(parent, conn, cursor):       # Win_ID
     form.geometry(f"{int(1600 * scaling_factor)}x{int(800 * scaling_factor)}")  # Adjust size
     #form.geometry("1600x800")
     form.resizable(False, False)
-    form.configure(bg=COLORS["very_pale_blue"])
+    form.configure(bg=config.master_bg)
     form.grab_set()
 
     # Variables
@@ -47,11 +48,11 @@ def create_regular_transactions_maint_form(parent, conn, cursor):       # Win_ID
     tree_items = []
 
     # Select/Clear All Checkbox
-    chk_all = tk.Button(form, text="Select/Clear ALL Rows", font=("Arial", 11), bg=COLORS["very_pale_blue"], 
+    chk_all = tk.Button(form, text="Select/Clear ALL Rows", font=("Arial", 11), bg=config.master_bg, 
                         command=lambda: toggle_all_checkboxes()).place(x=int(25 * scaling_factor), y=int(25 * scaling_factor), width=int(180 * scaling_factor))
 
     # Year Selection
-    tk.Label(form, text="Select Year:", font=("Arial", 11), bg=COLORS["very_pale_blue"]).place(x=int(300 * scaling_factor), y=int(30 * scaling_factor))
+    tk.Label(form, text="Select Year:", font=("Arial", 11), bg=config.master_bg).place(x=int(300 * scaling_factor), y=int(30 * scaling_factor))
     year_combo = ttk.Combobox(  form, textvariable=selected_year, values=fetch_years(cursor), 
                                 font=("Arial", 11), width=6, state="readonly")
     year_combo.place(x=int(390 * scaling_factor), y=int(25 * scaling_factor))
@@ -258,7 +259,7 @@ def create_regular_transaction_form(parent, form, conn, cursor, curr_rec_id=0, i
     form.geometry(f"{int(1400 * scaling_factor)}x{int(300 * scaling_factor)}")  # Adjust size
     #form.geometry("1400x300")
     form.resizable(False, False)
-    form.configure(bg=COLORS["very_pale_blue"])
+    form.configure(bg=config.master_bg)
     form.grab_set()
 
     year = int(parent.children["!combobox"].get())  # Get year from parent form
@@ -284,56 +285,56 @@ def create_regular_transaction_form(parent, form, conn, cursor, curr_rec_id=0, i
     flag_var = tk.BooleanVar(value=False if is_new else bool(reg_rec["Reg_Query_Flag"]))
 
     # Widgets
-    tk.Label(form, text="Frequency:", font=("Arial", 10), bg=COLORS["very_pale_blue"]).place(x=int(50 * scaling_factor), y=int(50 * scaling_factor))
+    tk.Label(form, text="Frequency:", font=("Arial", 10), bg=config.master_bg).place(x=int(50 * scaling_factor), y=int(50 * scaling_factor))
     freq_combo = ttk.Combobox(form, textvariable=frequency_var, values=["Monthly", "Weekly", "Yearly", "2-Weekly", "4-Weekly"], state="readonly", font=("Arial", 10))
     freq_combo.place(x=int(180 * scaling_factor), y=int(45 * scaling_factor), width=int(150 * scaling_factor))
 
-    day_label = tk.Label(form, text="Day of Month:", font=("Arial", 10), bg=COLORS["very_pale_blue"])
+    day_label = tk.Label(form, text="Day of Month:", font=("Arial", 10), bg=config.master_bg)
     day_label.place(x=int(50 * scaling_factor), y=int(100 * scaling_factor))
     day_combo = ttk.Combobox(form, textvariable=day_var, state="readonly", font=("Arial", 10))
     day_combo.place(x=int(180 * scaling_factor), y=int(95 * scaling_factor), width=int(150 * scaling_factor))
 
-    tk.Label(form, text="Month of Year:", font=("Arial", 10), bg=COLORS["very_pale_blue"]).place(x=int(50 * scaling_factor), y=int(150 * scaling_factor))
+    tk.Label(form, text="Month of Year:", font=("Arial", 10), bg=config.master_bg).place(x=int(50 * scaling_factor), y=int(150 * scaling_factor))
     month_combo = ttk.Combobox(form, textvariable=month_var, values=[""] + [datetime(2023, m, 1).strftime("%B") for m in range(1, 13)], state="readonly", font=("Arial", 10))
     month_combo.place(x=int(180 * scaling_factor), y=int(145 * scaling_factor), width=int(150 * scaling_factor))
 
-    tk.Label(form, text="Transaction Type:", font=("Arial", 10), bg=COLORS["very_pale_blue"]).place(x=int(50 * scaling_factor), y=int(200 * scaling_factor))
+    tk.Label(form, text="Transaction Type:", font=("Arial", 10), bg=config.master_bg).place(x=int(50 * scaling_factor), y=int(200 * scaling_factor))
     type_combo = ttk.Combobox(form, textvariable=type_var, values=["Income", "Expenditure", "Transfer"], state="readonly", font=("Arial", 10))
     type_combo.place(x=int(180 * scaling_factor), y=int(195 * scaling_factor), width=int(150 * scaling_factor))
 
-    tk.Label(form, text="Amount:", font=("Arial", 10), bg=COLORS["very_pale_blue"]).place(x=int(400 * scaling_factor), y=int(50 * scaling_factor))
+    tk.Label(form, text="Amount:", font=("Arial", 10), bg=config.master_bg).place(x=int(400 * scaling_factor), y=int(50 * scaling_factor))
     amount_entry = tk.Entry(form, textvariable=amount_var, font=("Arial", 10))
     amount_entry.place(x=int(500 * scaling_factor), y=int(45 * scaling_factor), width=int(150 * scaling_factor))
 
-    tk.Label(form, text="Description:", font=("Arial", 10), bg=COLORS["very_pale_blue"]).place(x=int(400 * scaling_factor), y=int(100 * scaling_factor))
+    tk.Label(form, text="Description:", font=("Arial", 10), bg=config.master_bg).place(x=int(400 * scaling_factor), y=int(100 * scaling_factor))
     desc_entry = tk.Entry(form, textvariable=desc_var, font=("Arial", 10))
     desc_entry.place(x=int(500 * scaling_factor), y=int(95 * scaling_factor), width=int(200 * scaling_factor))
 
-    tk.Label(form, text="Start Date:", font=("Arial", 10), bg=COLORS["very_pale_blue"]).place(x=int(400 * scaling_factor), y=int(150 * scaling_factor))
+    tk.Label(form, text="Start Date:", font=("Arial", 10), bg=config.master_bg).place(x=int(400 * scaling_factor), y=int(150 * scaling_factor))
     start_entry = tk.Entry(form, textvariable=start_var, font=("Arial", 10), state="readonly")
     start_entry.place(x=int(500 * scaling_factor), y=int(145 * scaling_factor), width=int(150 * scaling_factor))
     tk.Button(form, text="Cal", font=("Arial", 10), command=lambda: pick_date(start_entry, form)).place(x=int(660 * scaling_factor), y=int(145 * scaling_factor), 
                                                                                                         width=int(30 * scaling_factor))
 
-    tk.Label(form, text="Stop Date:", font=("Arial", 10), bg=COLORS["very_pale_blue"]).place(x=int(400 * scaling_factor), y=int(200 * scaling_factor))
+    tk.Label(form, text="Stop Date:", font=("Arial", 10), bg=config.master_bg).place(x=int(400 * scaling_factor), y=int(200 * scaling_factor))
     stop_entry = tk.Entry(form, textvariable=stop_var, font=("Arial", 10), state="readonly")
     stop_entry.place(x=int(500 * scaling_factor), y=int(195 * scaling_factor), width=int(150 * scaling_factor))
     tk.Button(form, text="Cal", font=("Arial", 10), command=lambda: pick_date(stop_entry, form)).place(x=int(660 * scaling_factor), y=int(195 * scaling_factor), 
                                                                                                        width=int(30 * scaling_factor))
 
-    tk.Label(form, text="Exp Category:", font=("Arial", 10), bg=COLORS["very_pale_blue"]).place(x=int(800 * scaling_factor), y=int(50 * scaling_factor))
+    tk.Label(form, text="Exp Category:", font=("Arial", 10), bg=config.master_bg).place(x=int(800 * scaling_factor), y=int(50 * scaling_factor))
     exp_cat_combo = ttk.Combobox(form, textvariable=exp_cat_var, state="readonly", font=("Arial", 10))
     exp_cat_combo.place(x=int(960 * scaling_factor), y=int(45 * scaling_factor), width=int(200 * scaling_factor))
 
-    tk.Label(form, text="Exp Sub-Category:", font=("Arial", 10), bg=COLORS["very_pale_blue"]).place(x=int(800 * scaling_factor), y=int(100 * scaling_factor))
+    tk.Label(form, text="Exp Sub-Category:", font=("Arial", 10), bg=config.master_bg).place(x=int(800 * scaling_factor), y=int(100 * scaling_factor))
     exp_sub_combo = ttk.Combobox(form, textvariable=exp_sub_var, state="readonly", font=("Arial", 10))
     exp_sub_combo.place(x=int(960 * scaling_factor), y=int(95 * scaling_factor), width=int(200 * scaling_factor))
 
-    tk.Label(form, text="Account From:", font=("Arial", 10), bg=COLORS["very_pale_blue"]).place(x=int(800 * scaling_factor), y=int(150 * scaling_factor))
+    tk.Label(form, text="Account From:", font=("Arial", 10), bg=config.master_bg).place(x=int(800 * scaling_factor), y=int(150 * scaling_factor))
     acc_from_combo = ttk.Combobox(form, textvariable=acc_from_var, values=fetch_account_full_names(cursor, year), state="readonly", font=("Arial", 10))
     acc_from_combo.place(x=int(960 * scaling_factor), y=int(145 * scaling_factor), width=int(200 * scaling_factor))
 
-    tk.Label(form, text="Account To:", font=("Arial", 10), bg=COLORS["very_pale_blue"]).place(x=int(800 * scaling_factor), y=int(200 * scaling_factor))
+    tk.Label(form, text="Account To:", font=("Arial", 10), bg=config.master_bg).place(x=int(800 * scaling_factor), y=int(200 * scaling_factor))
     acc_to_combo = ttk.Combobox(form, textvariable=acc_to_var, values=fetch_account_full_names(cursor, year), state="readonly", font=("Arial", 10))
     acc_to_combo.place(x=int(960 * scaling_factor), y=int(195 * scaling_factor), width=int(200 * scaling_factor))
 

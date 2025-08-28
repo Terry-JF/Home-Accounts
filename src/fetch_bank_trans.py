@@ -13,7 +13,7 @@ from rules_engine import process_transactions, cleanup_ha_import
 init_config()
 
 # Get logger
-logger = logging.getLogger('HA.transactions')
+logger = logging.getLogger('HA.fetch_bank')
 
 def main():
     """Fetch and process bank transactions."""
@@ -22,6 +22,7 @@ def main():
     
     try:
         # Open database using db.py's logic
+        # Will open test db if APP_ENV = 'test'
         conn, cur = open_db()
         logger.info(f"Database opened at {get_config('DB_PATH')}")
         

@@ -220,6 +220,11 @@ CREATE TABLE "Rules" (
 	UNIQUE("Rule_Name"),
 	FOREIGN KEY("Group_ID") REFERENCES "RuleGroups"("Group_ID")
 )
+CREATE TABLE "Settings" (
+	"key"	TEXT,
+	"value"	TEXT NOT NULL,
+	PRIMARY KEY("key")
+)
 CREATE TABLE "Trans" (
 	"Tr_ID"	INTEGER,
 	"Tr_Type"	INTEGER,

@@ -24,7 +24,8 @@ except Exception as e:
 
 def create_rules_form(parent, conn, cursor):                            # Win_ID = 22
     
-    year = 2025                     ####################### needs to be changed to use a global value across the Program, set by the combo on Home Form
+    # Get current HA year setting
+    year = int(parent.year_var.get())  # Use global year_var
     
     form = tk.Toplevel(parent)
     form.title("Manage Rules")
@@ -630,7 +631,7 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
     def button_action(rule_id, action_index, group_id, conn, cursor, form):
         #logger.debug("   ** button_action() ** ")
         actions = {
-            0: lambda r, g: edit_rule_form(r, g, conn, cursor, form, scrolled_frame),
+            0: lambda r, g: edit_rule_form(r, g, conn, cursor, form, scrolled_frame, parent),
             1: lambda r, g: delete_rule(r, g, conn, cursor, form),
             2: lambda r, g: messagebox.showinfo("See Matching", f"Show matching transactions for rule {r}", parent=form),
             3: lambda r, g: messagebox.showinfo("Apply Rule", f"Apply rule {r} to selected transactions", parent=form),

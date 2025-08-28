@@ -4,7 +4,9 @@ from tkinter import ttk, messagebox
 from datetime import datetime
 import logging
 from db import  (fetch_years, fetch_categories, fetch_subcategories, fetch_actuals)
-from ui_utils import (COLORS, TEXT_COLORS, open_form_with_position, close_form_with_position)
+from ui_utils import (open_form_with_position, close_form_with_position)
+from config import COLORS, TEXT_COLORS
+import config
 
 # Set up logging
 logger = logging.getLogger('HA.focus_forms')
@@ -30,7 +32,7 @@ def create_summary_form(parent, conn, cursor):                          # Win_ID
     form.geometry(f"{int(1675 * scaling_factor)}x{int(1020 * scaling_factor)}")  # Adjust size
     #form.geometry("1675x1020")
     form.resizable(False, False)
-    form.configure(bg=COLORS["very_pale_blue"])
+    form.configure(bg=config.master_bg)
     form.grab_set()
 
     # Variables
@@ -40,7 +42,7 @@ def create_summary_form(parent, conn, cursor):                          # Win_ID
     is_expanded = tk.BooleanVar(value=False)  # Track expansion state
 
     # Year Selection
-    tk.Label(form, text="Year:", font=("Arial", 11), bg=COLORS["very_pale_blue"]).place(x=int(20 * scaling_factor), y=int(20 * scaling_factor))
+    tk.Label(form, text="Year:", font=("Arial", 11), bg=config.master_bg).place(x=int(20 * scaling_factor), y=int(20 * scaling_factor))
     year_combo = ttk.Combobox(  form, textvariable=selected_year, values=fetch_years(cursor), 
                                 font=("Arial", 11), width=6, state="readonly")
     year_combo.place(x=int(60 * scaling_factor), y=int(20 * scaling_factor))
@@ -50,7 +52,7 @@ def create_summary_form(parent, conn, cursor):                          # Win_ID
     columns = ("PID/CID", "BFWD", "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC", "TOTALS", "AVG/Month")
     tree = ttk.Treeview(form, columns=columns, show="headings", height=int(40 * scaling_factor), selectmode="browse")
     tree.place(x=int(20 * scaling_factor), y=int(100 * scaling_factor), width=int(1635 * scaling_factor), height=int(890 * scaling_factor))
-    tree.tag_configure("parent", background=COLORS["very_pale_blue"], font=("Arial", 10))  # Arial 10 for parent rows
+    tree.tag_configure("parent", background=config.master_bg, font=("Arial", 10))  # Arial 10 for parent rows
     tree.tag_configure("child", font=("Arial", 10))  # Arial 10 for child rows
 
     widths = [int(30 * scaling_factor), int(150 * scaling_factor), int(90 * scaling_factor)] + [int(90 * scaling_factor)] * 12 + [int(100 * scaling_factor), int(100 * scaling_factor)]
@@ -78,7 +80,7 @@ def create_summary_form(parent, conn, cursor):                          # Win_ID
                 command=lambda: close_form_with_position(form, conn, cursor, win_id)).place(x=int(1500 * scaling_factor), y=int(60 * scaling_factor), width=int(100 * scaling_factor))
 
     # User guide
-    user_guide=tk.Label(form, text="(double-click any parent row to open/close it)", font=("Arial", 9, 'italic'), background=COLORS["very_pale_blue"])
+    user_guide=tk.Label(form, text="(double-click any parent row to open/close it)", font=("Arial", 9, 'italic'), background=config.master_bg)
     user_guide.place(x=int(20 * scaling_factor), y=int(995 * scaling_factor))
 
     def toggle_treeview():
@@ -169,7 +171,7 @@ def create_summary_form(parent, conn, cursor):                          # Win_ID
         open_form_with_position(dd_form, conn, cursor, 19, "Transactions making up this row of the Summary")
         dd_form.geometry(f"{int(460 * scaling_factor)}x{int(935 * scaling_factor)}")
         dd_form.resizable(False, False)
-        dd_form.configure(bg=COLORS["very_pale_blue"])
+        dd_form.configure(bg=config.master_bg)
         dd_form.grab_set()
         dd_form.lift()
         dd_form.focus_set()
@@ -181,7 +183,7 @@ def create_summary_form(parent, conn, cursor):                          # Win_ID
         scrollbar.place(x=int(435 * scaling_factor), y=int(10 * scaling_factor), height=int(860 * scaling_factor))
         dd_tree.configure(yscrollcommand=scrollbar.set)
         
-        dd_tree.tag_configure("total", background=COLORS["very_pale_blue"], font=("Arial", 10))
+        dd_tree.tag_configure("total", background=config.master_bg, font=("Arial", 10))
         dd_tree.tag_configure("marked", background="#FFC993")
         dd_tree.tag_configure("forecast", foreground=TEXT_COLORS["Forecast"], font=("Arial", 10))
         dd_tree.tag_configure("processing", foreground=TEXT_COLORS["Processing"], font=("Arial", 10))
@@ -462,14 +464,14 @@ def create_monthly_focus_form(parent, conn, cursor, year, month):       # Win_ID
     form.geometry(f"{int(800 * scaling_factor)}x{int(1025 * scaling_factor)}")  # Adjust size
     #form.geometry("800x1045")
     form.resizable(False, False)
-    form.configure(bg=COLORS["very_pale_blue"])
+    form.configure(bg=config.master_bg)
     form.grab_set()
 
     # Treeview
     columns = ("Description", "Completed", "Forecast", "Total", "Budget", "Difference", "WARN")
     tree = ttk.Treeview(form, columns=columns, show="tree headings", height=46)
     tree.place(x=int(10 * scaling_factor), y=int(10 * scaling_factor), width=int(780 * scaling_factor), height=int(960 * scaling_factor))
-    tree.tag_configure("parent", background=COLORS["very_pale_blue"], font=("Arial", 10))
+    tree.tag_configure("parent", background=config.master_bg, font=("Arial", 10))
     tree.tag_configure("child", font=("Arial", 10))
 
     # Configure header style

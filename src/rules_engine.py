@@ -276,7 +276,7 @@ def apply_rules(conn, hai_id, acc_id):
         groups = cur.fetchall()
         
         for group_id, group_sequence in groups:
-            logger.debug(f"Processing Rule Group {group_id} (Sequence {group_sequence})")
+            logger.debug(f"Processing Rule Group {group_id} (Group Sequence {group_sequence})")
             # Fetch rules in group
             cur.execute("""
                 SELECT Rule_ID, Rule_Sequence, Rule_Enabled, Rule_Active, 
@@ -291,7 +291,7 @@ def apply_rules(conn, hai_id, acc_id):
             for rule_id, rule_sequence, rule_enabled, rule_active, trigger_mode, rule_proceed in rules:
                 if not group_proceed:
                     break
-                logger.debug(f"Processing Rule {rule_id} (Sequence {rule_sequence})")
+                logger.debug(f"  Processing Rule {rule_id} (Rule Sequence {rule_sequence})")
                 
                 # Fetch triggers
                 cur.execute("""
@@ -302,98 +302,104 @@ def apply_rules(conn, hai_id, acc_id):
                 """, (rule_id,))
                 triggers = cur.fetchall()
                 
-                all_triggers_matched = True
-                any_trigger_matched = False
-                for trigger_id, trigo_id, value, trigger_sequence in triggers:
-                    logger.debug(f"Evaluating Trigger {trigger_id} (TrigO_ID={trigo_id}, Value={value})")
-                    trigger_matched = False
-                    
-                    # Amount triggers
-                    if trigo_id == 1:  # Amount is exactly
-                        trigger_matched = float(hai_amount) == float(value)
-                    elif trigo_id == 2:  # Amount is less than
-                        trigger_matched = float(hai_amount) < float(value)
-                    elif trigo_id == 3:  # Amount is more than
-                        trigger_matched = float(hai_amount) > float(value)
-                    
-                    # Tag triggers
-                    elif trigo_id in (4, 5, 6, 7, 8, 9, 10, 11):
-                        cur.execute("SELECT Tag_Text FROM Rule_Tags WHERE Rule_ID = ?", (rule_id,))
-                        tags = [row[0] for row in cur.fetchall()]
-                        if trigo_id == 4:  # Any Tag is exactly
-                            trigger_matched = any(tag == value for tag in tags)
-                        elif trigo_id == 5:  # Any Tag starts with
-                            trigger_matched = any(tag.startswith(value) for tag in tags)
-                        elif trigo_id == 6:  # Any Tag ends with
-                            trigger_matched = any(tag.endswith(value) for tag in tags)
-                        elif trigo_id == 7:  # Any Tag contains
-                            trigger_matched = any(value in tag for tag in tags)
-                        elif trigo_id == 8:  # No Tag is exactly
-                            trigger_matched = not any(tag == value for tag in tags)
-                        elif trigo_id == 9:  # No Tag starts with
-                            trigger_matched = not any(tag.startswith(value) for tag in tags)
-                        elif trigo_id == 10:  # No Tag ends with
-                            trigger_matched = not any(tag.endswith(value) for tag in tags)
-                        elif trigo_id == 11:  # No Tag contains
-                            trigger_matched = not any(value in tag for tag in tags)
-                    
-                    # Description triggers
-                    elif trigo_id == 12:  # Description is exactly
-                        trigger_matched = hai_desc == value
-                    elif trigo_id == 13:  # Description starts with
-                        trigger_matched = hai_desc.startswith(value)
-                    elif trigo_id == 14:  # Description ends with
-                        trigger_matched = hai_desc.endswith(value)
-                    elif trigo_id == 15:  # Description contains
-                        trigger_matched = value in hai_desc
-                    
-                    # Account triggers
-                    elif trigo_id == 16:  # Destination Account Name is
-                        trigger_matched = int(hai_acc_to) == int(value) if hai_acc_to else False
-                    elif trigo_id == 17:  # Destination Account Name is not
-                        trigger_matched = int(hai_acc_to) != int(value) if hai_acc_to else True
-                    elif trigo_id == 18:  # Source Account Name is
-                        trigger_matched = int(hai_acc_from) == int(value) if hai_acc_from else False
-                    elif trigo_id == 19:  # Source Account Name is not
-                        trigger_matched = int(hai_acc_from) != int(value) if hai_acc_from else True
-                    
-                    # Date triggers
-                    elif trigo_id in (20, 21, 22):  # Booked Date is on/before/after
-                        try:
-                            trans_date = datetime(hai_year, hai_month, hai_day)
-                            value_date = datetime.strptime(value, "%Y-%m-%d")
-                            if trigo_id == 20:  # On
-                                trigger_matched = trans_date.date() == value_date.date()
-                            elif trigo_id == 21:  # Before
-                                trigger_matched = trans_date.date() < value_date.date()
-                            elif trigo_id == 22:  # After
-                                trigger_matched = trans_date.date() > value_date.date()
-                        except ValueError as e:
-                            logger.error(f"Invalid date format in Trigger {trigger_id}: {value} ({e})")
-                            trigger_matched = False
-                    
-                    # Transaction type triggers
-                    elif trigo_id == 23:  # Withdrawal
-                        trigger_matched = hai_type == 2
-                    elif trigo_id == 24:  # Deposit
-                        trigger_matched = hai_type == 1
-                    elif trigo_id == 25:  # Transfer
-                        trigger_matched = hai_type == 3
-                    
-                    # Status triggers
-                    elif trigo_id == 26:  # Pending
-                        trigger_matched = hai_stat == 2
-                    elif trigo_id == 27:  # Booked
-                        trigger_matched = hai_stat == 3
-                    
-                    logger.debug(f"Trigger {trigger_id} {'matched' if trigger_matched else 'did not match'}")
-                    
-                    if trigger_mode == 'Any' and trigger_matched:
-                        any_trigger_matched = True
-                        break
-                    elif trigger_mode == 'ALL' and not trigger_matched:
-                        all_triggers_matched = False
-                        break
+                if len(triggers) == 0:
+                    all_triggers_matched = False
+                    logger.debug(f"  Rule {rule_id} has no triggers, skipping")
+                else:
+                    all_triggers_matched = True
+                    any_trigger_matched = False
+                    for trigger_id, trigo_id, value, trigger_sequence in triggers:
+                        logger.debug(f"    Evaluating Trigger {trigger_id} (TrigO_ID={trigo_id}, Value={value})")
+                        trigger_matched = False
+                        
+                        # Amount triggers
+                        if trigo_id == 1:  # Amount is exactly
+                            trigger_matched = float(hai_amount) == float(value)
+                        elif trigo_id == 2:  # Amount is less than
+                            trigger_matched = float(hai_amount) < float(value)
+                        elif trigo_id == 3:  # Amount is more than
+                            trigger_matched = float(hai_amount) > float(value)
+                        
+                        # Tag triggers
+                        elif trigo_id in (4, 5, 6, 7, 8, 9, 10, 11):
+                            cur.execute("SELECT Tag_Text FROM Rule_Tags WHERE Rule_ID = ?", (rule_id,))
+                            tags = [row[0] for row in cur.fetchall()]
+                            if trigo_id == 4:  # Any Tag is exactly
+                                trigger_matched = any(tag == value for tag in tags)
+                            elif trigo_id == 5:  # Any Tag starts with
+                                trigger_matched = any(tag.startswith(value) for tag in tags)
+                            elif trigo_id == 6:  # Any Tag ends with
+                                trigger_matched = any(tag.endswith(value) for tag in tags)
+                            elif trigo_id == 7:  # Any Tag contains
+                                trigger_matched = any(value in tag for tag in tags)
+                            elif trigo_id == 8:  # No Tag is exactly
+                                trigger_matched = not any(tag == value for tag in tags)
+                            elif trigo_id == 9:  # No Tag starts with
+                                trigger_matched = not any(tag.startswith(value) for tag in tags)
+                            elif trigo_id == 10:  # No Tag ends with
+                                trigger_matched = not any(tag.endswith(value) for tag in tags)
+                            elif trigo_id == 11:  # No Tag contains
+                                trigger_matched = not any(value in tag for tag in tags)
+                        
+                        # Description triggers - ARE THESE CASE SENSITIVE???????
+                        elif trigo_id == 12:  # Description is exactly
+                            trigger_matched = hai_desc == value
+                        elif trigo_id == 13:  # Description starts with
+                            trigger_matched = hai_desc.startswith(value)
+                        elif trigo_id == 14:  # Description ends with
+                            trigger_matched = hai_desc.endswith(value)
+                        elif trigo_id == 15:  # Description contains
+                            trigger_matched = value in hai_desc
+                        
+                        # Account triggers
+                        elif trigo_id == 16:  # Destination Account Name is
+                            trigger_matched = int(hai_acc_to) == int(value) if hai_acc_to else False
+                        elif trigo_id == 17:  # Destination Account Name is not
+                            trigger_matched = int(hai_acc_to) != int(value) if hai_acc_to else True
+                        elif trigo_id == 18:  # Source Account Name is
+                            trigger_matched = int(hai_acc_from) == int(value) if hai_acc_from else False
+                        elif trigo_id == 19:  # Source Account Name is not
+                            trigger_matched = int(hai_acc_from) != int(value) if hai_acc_from else True
+                        
+                        # Date triggers
+                        elif trigo_id in (20, 21, 22):  # Booked Date is on/before/after
+                            try:
+                                trans_date = datetime(hai_year, hai_month, hai_day)
+                                value_date = datetime.strptime(value, "%Y-%m-%d")
+                                if trigo_id == 20:  # On
+                                    trigger_matched = trans_date.date() == value_date.date()
+                                elif trigo_id == 21:  # Before
+                                    trigger_matched = trans_date.date() < value_date.date()
+                                elif trigo_id == 22:  # After
+                                    trigger_matched = trans_date.date() > value_date.date()
+                            except ValueError as e:
+                                logger.error(f"Invalid date format in Trigger {trigger_id}: {value} ({e})")
+                                trigger_matched = False
+                        
+                        # Transaction type triggers
+                        elif trigo_id == 23:  # Withdrawal
+                            trigger_matched = hai_type == 2
+                        elif trigo_id == 24:  # Deposit
+                            trigger_matched = hai_type == 1
+                        elif trigo_id == 25:  # Transfer
+                            trigger_matched = hai_type == 3
+                        
+                        # Status triggers
+                        elif trigo_id == 26:  # Pending
+                            trigger_matched = hai_stat == 2
+                        elif trigo_id == 27:  # Booked
+                            trigger_matched = hai_stat == 3
+                        
+                        logger.debug(f"      Trigger {trigger_id} {'matched' if trigger_matched else 'did not match'}")
+                        
+                        if trigger_mode == 'Any' and trigger_matched:
+                            any_trigger_matched = True
+                            break
+                        elif trigger_mode == 'ALL' and not trigger_matched:
+                            all_triggers_matched = False
+                            break
+                
+                #logger.debug(f">> Trigger={trigger_id} Trigger Mode={trigger_mode} Any trigger matched={any_trigger_matched} All triggers matched={all_triggers_matched}")
                 
                 # Process actions if triggers fire
                 if (trigger_mode == 'Any' and any_trigger_matched) or (trigger_mode == 'ALL' and all_triggers_matched):

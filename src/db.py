@@ -5,7 +5,7 @@ import shutil
 from datetime import datetime
 from calendar import monthrange
 import logging
-from config import get_config
+from config import CONFIG, get_config
 
 # Set up logging
 logger = logging.getLogger('HA.db')
@@ -26,11 +26,16 @@ def open_db():
             shutil.copy(db_source, db_path)
     else:
         # Running as script
-        db_path = get_config('DB_PATH')
+        # Get correct DB
+        if CONFIG['APP_ENV'] == 'test':
+            db_path = get_config('DB_PATH_TEST')
+        else:
+            db_path = get_config('DB_PATH')
     
     try:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
+        logger.debug(f"Database open: {db_path}")
         return conn, cursor
     except sqlite3.Error as e:
         raise Exception(f"Failed to open database: {e}")    
@@ -38,7 +43,7 @@ def open_db():
 def close_db(conn):
     if conn:
         conn.close()
-
+    logger.debug("Database closed:")
 
 # Transaction Table
 def insert_transaction(cursor, conn, tr_type, day, month, year, status, flag, amount, desc, acc_from, acc_to, cat_pid=None, subcat_cid=None, reg_id=0):

@@ -1,14 +1,14 @@
-# Creates main form for the HA2 program
+# Creates the New/Edit form and Toolbox form
 
 import tkinter as tk
 from tkinter import ttk, messagebox
 from tkcalendar import Calendar
 from datetime import datetime
 import logging
-
+from config import COLORS
 from db import  (insert_transaction, update_transaction, delete_transaction, fetch_notes, fetch_categories, fetch_subcategories,
                 fetch_account_full_names, fetch_statement_balances, update_account_month_transaction_total)
-from ui_utils import (COLORS, refresh_grid, open_form_with_position, close_form_with_position)
+from ui_utils import (refresh_grid, open_form_with_position, close_form_with_position)
 from gui_maint import   (create_account_maint_form, create_category_maint_form, create_export_transactions_form,
                         create_colour_scheme_maint_form, create_account_years_maint_form, create_annual_budget_maint_form, 
                         create_transaction_options_maint_form, create_form_positions_maint_form, create_ff_mappings_maint_form)

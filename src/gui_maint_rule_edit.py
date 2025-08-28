@@ -13,10 +13,8 @@ from ui_utils import (VerticalScrolledFrame, resource_path, open_form_with_posit
 # Set up logging
 logger = logging.getLogger('HA.maint_rule_edit')
 
-def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):                  # Win_ID = 24
+def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame, root):                  # Win_ID = 24
     # Create the Edit Rule form as a top-level window
-    year = 2025             ############################################## fix later
-    
     edit_form = tk.Toplevel(form)
     edit_form.title("Edit Rule")
     edit_form.transient(form)
@@ -39,7 +37,6 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
     
     # Initialize form attributes for actions
     edit_form.action_combos = {}
-    #edit_form.action_rows = []
     edit_form.action_value_widgets = {}
     edit_form.next_action_row = 1
 
@@ -61,6 +58,7 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
     group_names = fetch_rule_group_names(cursor)
     trigger_options = fetch_trigger_options(cursor)
     action_options = fetch_action_options(cursor)
+    year = int(root.year_var.get())  # Use global year_var
     account_names = fetch_account_names(cursor, year)
     parent_categories = fetch_all_categories(cursor, year)
     #logger.debug(f"account_names = {account_names}")
@@ -411,8 +409,6 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
             #logger.debug(f"Edit 40 created for acto_id= {acto_id}")
         elif acto_id in (3, 4, 5, 6, 7):                        # No field required
             value_widget = tk.Label(actions_frame, state="disabled")
-            #value_widget.insert(0, "")
-            #logger.debug(f"Disabled Edit created for acto_id= {acto_id}")
         elif acto_id == 8:                                      # Two comboboxes for parent and sub-category
             try:
                 pid, cid = map(int, action_value.split(',')) if action_value and ',' in action_value else (0, 0)
@@ -455,66 +451,85 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
     def update_action_value_field(edit_form, event):
         combo = event.widget
         row = combo.grid_info()['row']
+        # Destroy existing widgets for this row
         if row in edit_form.action_value_widgets:
             edit_form.action_value_widgets[row].destroy()
+            del edit_form.action_value_widgets[row]
+        # Also destroy extra_widget if it exists (for ActO_ID=8)
+        for idx, action_row in enumerate(action_rows):
+            if action_row[4] == row:  # action_row[4] is seq
+                if action_row[5]:  # action_row[5] is extra_widget
+                    action_row[5].destroy()
+                    action_rows[idx] = action_rows[idx][:5] + (None, action_rows[idx][6])  # Set extra_widget to None
+                break
         
         selected_desc = combo.get()
         cursor.execute("SELECT ActO_ID FROM Act_Options WHERE ActO_Description = ?", (selected_desc,))
         acto_id_result = cursor.fetchone()
         if not acto_id_result:
+            logger.error(f"No ActO_ID found for description: {selected_desc}")
             return
         acto_id = acto_id_result[0]
         value_widget, extra_widget = create_action_value_widget(edit_form, acto_id, "")
         
         if acto_id == 8:
             value_widget.grid(row=row, column=2, sticky="w", padx=10 * scaling_factor)
-            extra_widget.grid(row=row, column=3, sticky="w", padx=10 * scaling_factor)
+            if extra_widget:
+                extra_widget.grid(row=row, column=3, sticky="w", padx=10 * scaling_factor)
         else:
             value_widget.grid(row=row, column=2, columnspan=2, sticky="w", padx=10 * scaling_factor)
-            
-        action_rows[row - 1] = (action_rows[row - 1][0], action_rows[row - 1][1], combo, value_widget, action_rows[row - 1][4], extra_widget, acto_id)
+        
+        # Update action_rows with new widgets
+        for idx, (aid, dbtn, cb, vw, seq, ew, aid_id) in enumerate(action_rows):
+            if seq == row:
+                action_rows[idx] = (aid, dbtn, cb, value_widget, seq, extra_widget, acto_id)
+                break
+        edit_form.action_value_widgets[row] = value_widget
+        edit_form.action_combos[row] = combo
+        logger.debug(f"Updated action row {row}: ActO_ID={acto_id}, value_widget={value_widget}, extra_widget={extra_widget}")
         edit_form.update_idletasks()
+        # Refresh all action combos after update
+        refresh_all_action_combos(edit_form, cursor)
 
     def create_action_value_widget(edit_form, acto_id, preload):
         extra_widget = None
-        
-        if acto_id in (1, 2, 10, 11, 12):       # Tag text or Description text
+        if acto_id in (1, 2, 10, 11, 12):  # Tag text or Description text
             value_widget = tk.Entry(actions_frame, width=58, font=("Arial", 10))
-        elif acto_id in (3, 4, 5, 6, 7):        # none required
+        elif acto_id in (3, 4, 5, 6, 7):  # none required
             value_widget = tk.Label(actions_frame, state="disabled")
-        elif acto_id == 8:                      # pid, cid values - numeric pair
+        elif acto_id == 8:  # pid, cid values - numeric pair
             value_widget = ttk.Combobox(actions_frame, values=[name for _, name in parent_categories], width=25, state="readonly", font=("Arial", 10))
-            value_widget.bind("<MouseWheel>", lambda e: scroll_frame(edit_scrolled_frame, e))  # Redirect mouse wheel scrolling to frame
-            extra_widget = ttk.Combobox(actions_frame, values=[], width=25, state="readonly", font=("Arial", 10))
-            extra_widget.bind("<MouseWheel>", lambda e: scroll_frame(edit_scrolled_frame, e))  # Redirect mouse wheel scrolling to frame
-
+            value_widget.bind("<MouseWheel>", lambda e: scroll_frame(edit_scrolled_frame, e))
+            parent_name = preload or parent_categories[0][1] if parent_categories else ""
+            value_widget.set(parent_name)
+            cursor.execute("SELECT IE_PID FROM IE_Cata WHERE IE_Desc = ? AND IE_CID = 0 AND IE_Year = ?", (parent_name, year))
+            pid_result = cursor.fetchone()
+            pid = pid_result[0] if pid_result else 0
+            sub_categories = fetch_subcategories(cursor, pid, year) if pid else []
+            extra_widget = ttk.Combobox(actions_frame, values=[name for _, name in sub_categories], width=25, state="readonly", font=("Arial", 10))
+            extra_widget.bind("<MouseWheel>", lambda e: scroll_frame(edit_scrolled_frame, e))
+            # Bind update to the first combobox
             def update_sub_categories(event):
                 parent_name = value_widget.get()
                 cursor.execute("SELECT IE_PID FROM IE_Cata WHERE IE_Desc = ? AND IE_CID = 0 AND IE_Year = ?", (parent_name, year))
                 pid_result = cursor.fetchone()
                 pid = pid_result[0] if pid_result else 0
-                #logger.debug(f"from combo 1 select - pid = {pid} ")
                 sub_categories = fetch_subcategories(cursor, pid, year) if pid else []
-                #logger.debug(f"subcategories = {sub_categories} ")
                 extra_widget['values'] = [name for _, name in sub_categories]
                 extra_widget.set("")
+                logger.debug(f"Updated subcategories for pid={pid}: {sub_categories}")
                 edit_form.update_idletasks()
-
             value_widget.bind("<<ComboboxSelected>>", update_sub_categories)
-        elif acto_id in (13, 14):               # acc_id value - numeric 1-12
+        elif acto_id in (13, 14):  # acc_id value - numeric 1-12
             value_widget = ttk.Combobox(actions_frame, values=[name for _, name in account_names], width=25, state="readonly", font=("Arial", 10))
-            value_widget.bind("<MouseWheel>", lambda e: scroll_frame(edit_scrolled_frame, e))  # Redirect mouse wheel scrolling to frame
-
+            value_widget.bind("<MouseWheel>", lambda e: scroll_frame(edit_scrolled_frame, e))
+        
         return value_widget, extra_widget
 
     def get_available_action_options(cursor, row, selected_actions):
         # Fetch all action options from Act_Options table
-        #action_options = fetch_action_options(cursor)
         cursor.execute("SELECT ActO_ID, ActO_Description FROM Act_Options ORDER BY ActO_Seq")
         action_options = cursor.fetchall()
-        
-        #logger.debug(f"selected_actions={selected_actions}")
-        #logger.debug(f"action_options={action_options}")
         
         # Define restriction sets
         unique_actions = {3, 8, 10, 13, 14}  # Can appear only once
@@ -546,23 +561,6 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
         nonlocal action_rows
         row = len(action_rows) + 1
         
-        #logger.debug(f"#######  add_action_row called - preload={preload}")
-        
-        # Set default or preloaded value
-        #if preload:
-        #    act_option = fetch_action_option(cursor, preload['acto_id'])
-        #    combo.set(act_option if act_option in [name for _, name in available_options] else "")
-        #else:
-        #   combo.set("")
-        
-        #edit_form.next_action_row = getattr(edit_form, 'next_action_row', 1)
-        #row = edit_form.next_action_row
-        #edit_form.action_combos = getattr(edit_form, 'action_combos', {})
-        #edit_form.action_rows = getattr(edit_form, 'action_rows', [])
-        #edit_form.action_value_widgets = getattr(edit_form, 'action_value_widgets', {}) 
-        
-        #row = edit_form.next_action_row 
-        
         delete_btn = tk.Button(actions_frame, image=delete_img, bg="red", command=lambda: delete_new_action_row(row, actions_frame, action_rows))
         delete_btn.grid(row=row, column=0, sticky="w", padx=20 * scaling_factor)
 
@@ -578,13 +576,6 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
         available_options = get_available_action_options(cursor, row, selected_actions)
         combo['values'] = [name for _, name in available_options]
         
-        # Set default or preloaded value
-        #if preload:
-        #    act_option = fetch_action_option(cursor, preload['acto_id'])
-        #    combo.set(act_option if act_option in [name for _, name in available_options] else "")
-        #else:
-        #    combo.set("")
-            
         combo.bind("<MouseWheel>", lambda e: scroll_frame(edit_scrolled_frame, e))  # Redirect mouse wheel scrolling to frame
 
         # Initialize with a default value field (updated on combobox selection)
@@ -606,7 +597,6 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
         #logger.debug(f"Added new action row at row {row}")
 
     def delete_action_row(action_id, conn, cursor, frame, rows):
-        # Delete an existing action from the database and UI
         try:
             cursor.execute("DELETE FROM Actions WHERE Action_ID = ?", (action_id,))
             conn.commit()
@@ -619,8 +609,15 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
                     if ew:
                         ew.destroy()
                     rows.pop(i)
+                    # Clean up action_combos and action_value_widgets
+                    if seq in edit_form.action_combos:
+                        del edit_form.action_combos[seq]
+                    if seq in edit_form.action_value_widgets:
+                        del edit_form.action_value_widgets[seq]
                     break
-            for j, (aid, dbtn, cb, vw, seq, ew, aid_id) in enumerate(rows):
+            # Re-grid remaining rows and update seq
+            for j in range(len(rows)):
+                aid, dbtn, cb, vw, seq, ew, aid_id = rows[j]
                 dbtn.grid(row=j + 1, column=0)
                 cb.grid(row=j + 1, column=1)
                 if vw:
@@ -628,13 +625,38 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
                 if ew:
                     ew.grid(row=j + 1, column=3)
                 rows[j] = (aid, dbtn, cb, vw, j + 1, ew, aid_id)
-            add_action_btn.grid(row=len(rows) + 1, column=0, columnspan=4)  # Adjust columnspan for extra column
+                edit_form.action_combos[j + 1] = cb
+                edit_form.action_value_widgets[j + 1] = vw
+            add_action_btn.grid(row=len(rows) + 1, column=0, columnspan=4)
             edit_scrolled_frame.canvas.configure(scrollregion=edit_scrolled_frame.canvas.bbox("all"))
             edit_form.update_idletasks()
-            #logger.debug(f"Deleted action ID {action_id}")
+            logger.debug(f"Deleted action ID {action_id}, updated action_combos: {list(edit_form.action_combos.keys())}")
+            # Refresh all action combos after delete
+            refresh_all_action_combos(edit_form, cursor)
         except Exception as e:
             logger.error(f"Error deleting action ID {action_id}: {e}\n{traceback.format_exc()}")
             messagebox.showerror("Error", f"Failed to delete action: {e}", parent=edit_form)
+
+    def refresh_all_action_combos(edit_form, cursor):
+        # Refresh all action combos based on current selected_actions
+        selected_actions = []
+        for row in sorted(edit_form.action_combos.keys()):
+            combo = edit_form.action_combos[row]
+            selected_desc = combo.get()
+            cursor.execute("SELECT ActO_ID FROM Act_Options WHERE ActO_Description = ?", (selected_desc,))
+            acto_id_result = cursor.fetchone()
+            acto_id = acto_id_result[0] if acto_id_result else None
+            selected_actions.append((row, selected_desc, acto_id))
+        
+        logger.debug(f"Refreshing combos with selected_actions: {selected_actions}")
+        
+        for row in sorted(edit_form.action_combos.keys()):
+            combo = edit_form.action_combos[row]
+            available_options = get_available_action_options(cursor, row, selected_actions)
+            combo['values'] = [desc for _, desc in available_options]
+            logger.debug(f"Refreshed combo for row {row} with values: {combo['values']}")
+        
+        edit_form.update_idletasks()
 
     def delete_new_action_row(row, frame, rows):
         # Delete a new (unsaved) action row from the UI
@@ -672,7 +694,7 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
             updated_trigger = trigger_combo.get()
             updated_active = 1 if active_combo.get() == "Active" else 0
             updated_stop = 0 if stop_combo.get() == "Proceed" else 1
-            updated_strict = "All" if strict_combo.get() == "ALL" else "Any"
+            updated_strict = "ALL" if strict_combo.get() == "ALL" else "Any"
 
             # Validate rule name
             if not updated_rule_name:
@@ -692,7 +714,6 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
                         (updated_rule_name, new_group_id, updated_active, updated_strict, not updated_stop, rule_id))
 
             # Handle triggers: delete removed ones, update existing, insert new
-            #logger.debug(f"trigger_rows={trigger_rows}")
             existing_trigger_ids = set(tid for tid, _, _, _, _, _, _ in trigger_rows if tid is not None)
             cursor.execute("SELECT Trigger_ID FROM Triggers WHERE Rule_ID = ?", (rule_id,))
             db_trigger_ids = set(tid[0] for tid in cursor.fetchall())
@@ -702,7 +723,7 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
             
             for i, (tid, _, combo, value_widget, seq, extra_widget, _) in enumerate(trigger_rows):
                 trig_desc = combo.get()
-                if trig_desc == "":                 # skip any blank triggers
+                if trig_desc == "":  # skip any blank triggers
                     continue
                 cursor.execute("SELECT TrigO_ID FROM Trig_Options WHERE TrigO_Description = ?", (trig_desc,))
                 trigo_id_result = cursor.fetchone()
@@ -712,24 +733,19 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
                 trigo_id = trigo_id_result[0]
                 trig_value = ""
                 
-                if trigo_id in (1, 2, 3):                                       # Amount
-                    trig_value = value_widget.get().strip()
-                    #logger.debug(f"1 - Saved changes for tid={tid}, trig_value={trig_value}")
-                elif trigo_id in (4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15):    # Tag text or Description text
-                    trig_value = value_widget.get().strip()
-                    #logger.debug(f"2 - Saved changes for tid={tid}, trig_value={trig_value}")
-                elif trigo_id in (16, 17, 18, 19):                              # Account Name
-                    account_name = value_widget.get()
+                if trigo_id in (1, 2, 3):  # Amount
+                    trig_value = value_widget.get().strip() if value_widget and value_widget.winfo_exists() else ""
+                elif trigo_id in (4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15):  # Tag text or Description text
+                    trig_value = value_widget.get().strip() if value_widget and value_widget.winfo_exists() else ""
+                elif trigo_id in (16, 17, 18, 19):  # Account Name
+                    account_name = value_widget.get() if value_widget and value_widget.winfo_exists() else ""
                     cursor.execute("SELECT Acc_ID FROM Account WHERE Acc_Name = ? AND Acc_Year = ?", (account_name, year))
                     acc_result = cursor.fetchone()
                     trig_value = acc_result[0] if acc_result else 0
-                    #logger.debug(f"3 - Saved changes for tid={tid}, trig_value={trig_value}")
-                elif trigo_id in (20, 21, 22):                                  # Date
-                    trig_value = value_widget.get().strip()
-                    #logger.debug(f"4 - Saved changes for tid={tid}, trig_value={trig_value}")
-                elif trigo_id in (23, 24, 25, 26, 27):                          # None - (Transaction Type or Status)
+                elif trigo_id in (20, 21, 22):  # Date
+                    trig_value = value_widget.get().strip() if value_widget and value_widget.winfo_exists() else ""
+                elif trigo_id in (23, 24, 25, 26, 27):  # None - (Transaction Type or Status)
                     trig_value = "none"
-                    #logger.debug(f"5 - Saved changes for tid={tid}, trig_value={trig_value}")
                 if tid is None:
                     cursor.execute("INSERT INTO Triggers (Rule_ID, TrigO_ID, Value, Trigger_Sequence) VALUES (?, ?, ?, ?)", 
                                 (rule_id, trigo_id, trig_value, i + 1))
@@ -738,7 +754,6 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
                                 (trigo_id, trig_value, i + 1, tid))
 
             # Handle actions: delete removed ones, update existing, insert new
-            #logger.debug(f"action_rows={action_rows}")
             existing_action_ids = set(aid for aid, _, _, _, _, _, _ in action_rows if aid is not None)
             cursor.execute("SELECT Action_ID FROM Actions WHERE Rule_ID = ?", (rule_id,))
             db_action_ids = set(aid[0] for aid in cursor.fetchall())
@@ -748,7 +763,7 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
             
             for i, (aid, _, combo, value_widget, seq, extra_widget, _) in enumerate(action_rows):
                 act_desc = combo.get()
-                if act_desc == "":                 # skip any blank actions
+                if act_desc == "":  # skip any blank actions
                     continue
                 cursor.execute("SELECT ActO_ID FROM Act_Options WHERE ActO_Description = ?", (act_desc,))
                 acto_id_result = cursor.fetchone()
@@ -756,32 +771,26 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
                     messagebox.showerror("Error", f"Invalid action: {act_desc}", parent=edit_form)
                     return
                 acto_id = acto_id_result[0]
-                #logger.debug(f"Saving changes - acto_id={acto_id}")
                 act_value = ""
-                if acto_id in (1, 2, 10, 11, 12):       # Tag text or Description text
-                    act_value = value_widget.get()
-                    #logger.debug(f"1 - Saved changes for aid={aid}, act_value={act_value}")
-                elif acto_id in (3, 4, 5, 6, 7):        # none required
+                if acto_id in (1, 2, 10, 11, 12):  # Tag text or Description text
+                    act_value = value_widget.get().strip() if value_widget and value_widget.winfo_exists() else ""
+                elif acto_id in (3, 4, 5, 6, 7):  # none required
                     act_value = "none"
-                    #logger.debug(f"2 - Saved changes for aid={aid}, act_value={act_value}")
-                elif acto_id == 8:                      # pid, cid values - numeric pair
-                    parent_name = value_widget.get()
-                    sub_name = extra_widget.get() if extra_widget else ""
+                elif acto_id == 8:  # pid, cid values - numeric pair
+                    parent_name = value_widget.get() if value_widget and value_widget.winfo_exists() else ""
+                    sub_name = extra_widget.get() if extra_widget and extra_widget.winfo_exists() else ""
                     cursor.execute("SELECT IE_PID FROM IE_Cata WHERE IE_Desc = ? AND IE_CID = 0 AND IE_Year = ?", (parent_name, year))
                     pid_result = cursor.fetchone()
                     pid = pid_result[0] if pid_result else 0
-                    #logger.debug(f"3 - Saved changes for aid={aid}, pid={pid}")
                     cursor.execute("SELECT IE_CID FROM IE_Cata WHERE IE_Desc = ? AND IE_PID = ? AND IE_Year = ?", (sub_name, pid, year))
                     cid_result = cursor.fetchone()
                     cid = cid_result[0] if cid_result else 0
                     act_value = f"{pid},{cid}"
-                    #logger.debug(f"4 - Saved changes for aid={aid}, act_value={act_value}")
-                elif acto_id in (13, 14):               # acc_id value - numeric 1-12
-                    account_name = value_widget.get()
+                elif acto_id in (13, 14):  # acc_id value - numeric 1-12
+                    account_name = value_widget.get() if value_widget and value_widget.winfo_exists() else ""
                     cursor.execute("SELECT Acc_ID FROM Account WHERE Acc_Name = ? AND Acc_Year = ?", (account_name, year))
                     acc_result = cursor.fetchone()
                     act_value = acc_result[0] if acc_result else 0
-                    #logger.debug(f"5 - Saved changes for aid={aid}, act_value={act_value}")
                 if aid is None:
                     cursor.execute("INSERT INTO Actions (Rule_ID, ActO_ID, Value, Action_Sequence) VALUES (?, ?, ?, ?)", 
                                 (rule_id, acto_id, act_value, i + 1))
@@ -793,7 +802,7 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame):      
             timed_message(edit_form, "Success", "Rule updated successfully", 3000)
             close_edit_rule_form(edit_form)
             form.event_generate("<<RefreshRules>>")
-            #logger.debug(f"Saved changes for Rule ID {rule_id}")
+            logger.debug(f"Saved changes for Rule ID {rule_id}")
         except Exception as e:
             logger.error(f"Error saving rule changes for Rule ID {rule_id}: {e}\n{traceback.format_exc()}")
             messagebox.showerror("Error", f"Failed to save rule changes: {e}", parent=edit_form)

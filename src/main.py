@@ -10,9 +10,10 @@ import logging
 from gui import (show_maint_toolbox, create_edit_form)
 from db import  (open_db, close_db, fetch_month_rows, fetch_transaction_sums, fetch_statement_balances, fetch_years,
                 update_account_year_transactions)
-from ui_utils import (COLORS, TEXT_COLORS, refresh_grid, open_form_with_position, close_form_with_position, resource_path)
+from ui_utils import (refresh_grid, open_form_with_position, close_form_with_position, resource_path)
 from focus_forms import (create_summary_form)
-from config import (init_config)
+from config import (COLORS, TEXT_COLORS, init_config)
+import config
 
 # Initialize configuration - sets up logger
 init_config() 
@@ -28,30 +29,35 @@ try:
 except Exception as e:
     logger.error(f"Failed to set DPI awareness: {e}")
 
-
 accounts = []  #Global variable
 
 def main():
     # Open database connection
+    logger.debug("Calling open_db()")
     conn, cursor = open_db()
     
     # Start the GUI, passing the connection and cursor
+    logger.debug("Calling create_home_screen()")
     create_home_screen(conn, cursor)
     
     # Close database connection when GUI exits
+    logger.debug("Calling close_db()")
     close_db(conn)
 
 def create_home_screen(conn, cursor):
     global accounts  # Keep global for now, could refactor later
     global year_var
+    
+    logger.debug(f"master_bg: {config.master_bg}")
+    
     root = tk.Tk()
     win_id = 15
-    open_form_with_position(root, conn, cursor, win_id, "HA2 Home Screen")
+    open_form_with_position(root, conn, cursor, win_id, "HA Home Screen")
     scaling_factor = root.winfo_fpixels('1i') / 96  # Get scaling factor (e.g., 2.0 for 200% scaling)
     root.geometry(f"{int(1920 * scaling_factor)}x{int(1045 * scaling_factor)}")  # Adjust size
-    root.configure(bg=COLORS["very_pale_blue"])
+    root.configure(bg=config.master_bg)
     root.protocol("WM_DELETE_WINDOW", lambda: None)
-    logger.debug("Starting HA application")
+    logger.debug("Created HA Home Screen")
 
     root.selected_row = tk.IntVar(value=-1)
     root.marked_rows = set()
@@ -81,7 +87,7 @@ def create_home_screen(conn, cursor):
 
     # Initial transaction fetch data
     root.rows_container = [fetch_month_rows(cursor, current.month, current.year, accounts, root.account_data)]
-    year_label = ttk.Label(root, text="Select Year:", font=("Arial", 14), background=COLORS["very_pale_blue"])
+    year_label = ttk.Label(root, text="Select Year:", font=("Arial", 14), background=config.master_bg)
     year_label.place(x=int(200 * scaling_factor), y=int(10 * scaling_factor))
     root.year_var = tk.StringVar(value=str(current.year))
     year_rows = fetch_years(cursor)
@@ -91,16 +97,21 @@ def create_home_screen(conn, cursor):
     year_combo.set(str(current.year))
     year_label.lift()
     year_combo.lift()
+    
+    # Define go_to_today to refresh the Home Form grid
+    def go_to_today():
+        root.year_var.set(str(current.year))
+        focus_day = str(current.day)
+        notebook.select(tabs[month_map_num[current.month]])
+        rows = fetch_month_rows(cursor, current.month, current.year, accounts, account_data)
+        refresh_grid(root.tree, rows, root.marked_rows, None, focus_day)
+        logger.debug("Home Form grid refreshed")
+
+    # Store go_to_today in root for external access
+    root.refresh_home = go_to_today
 
     today_date = datetime.today().strftime("%d/%m/%Y")
     current = datetime.today()
-
-    def go_to_today():
-        root.year_var.set(str(current.year))
-        focus_day=str(current.day)
-        notebook.select(tabs[month_map_num[current.month]])
-        rows = fetch_month_rows(cursor, current.month, current.year, accounts, account_data)
-        refresh_grid(root.tree, rows, root.marked_rows, None, focus_day) 
 
     today_button = tk.Button(   root, text=f"Today: {today_date}", font=("Arial", 12, "bold"), bg=COLORS["pale_green"],
                                 width=int(200 * scaling_factor), height=int(35 * scaling_factor), command=go_to_today)
@@ -166,7 +177,7 @@ def create_home_screen(conn, cursor):
     ]
 
     for i, text in enumerate(grid_label_texts):
-        label = tk.Label(root, text=text, font=("Arial", 10), bg=COLORS["very_pale_blue"], anchor="e")
+        label = tk.Label(root, text=text, font=("Arial", 10), bg=config.master_bg, anchor="e")
         if i == 3:  # Processing Transactions
             label.config(fg=TEXT_COLORS["Processing"])
         elif i == 5:  # Forecast Transactions
@@ -176,7 +187,7 @@ def create_home_screen(conn, cursor):
     #  End of Month Summary Block - EOMSB
     eomsbx = int(1400 * scaling_factor)
     eomsby = int(50 * scaling_factor)
-    eom_summary_label = ttk.Label(root, text="End of Month Summary", font=("Arial", 14), background=COLORS["very_pale_blue"])
+    eom_summary_label = ttk.Label(root, text="End of Month Summary", font=("Arial", 14), background=config.master_bg)
     eom_summary_label.place(x = eomsbx + int(190 * scaling_factor), y = eomsby)
 
     grid_labels2 = "Cash", "Credit", "Invest", "Loans", "Net"
@@ -203,12 +214,12 @@ def create_home_screen(conn, cursor):
     ]
 
     for i, text in enumerate(grid_label_texts2):
-        label = tk.Label(root, text=text, font=("Arial", 10), bg=COLORS["very_pale_blue"], anchor="e")
+        label = tk.Label(root, text=text, font=("Arial", 10), bg=config.master_bg, anchor="e")
         label.place(x = eomsbx + int(10 * scaling_factor), y = eomsby + int(30 * scaling_factor) + (i + 1) * btn_height2, width=int(60 * scaling_factor), height=btn_height2)
 
     style = ttk.Style()
     style.theme_use("winnative")  # Force a theme 
-    style.configure("TNotebook", background=COLORS["very_pale_blue"])
+    style.configure("TNotebook", background=config.master_bg)
     style.configure("TNotebook.Tab", font=("Arial", 12, "bold"), padding=[int(26 * scaling_factor), int(2 * scaling_factor)], background=COLORS["white"])
 
     # Map active/inactive states
@@ -217,7 +228,7 @@ def create_home_screen(conn, cursor):
             foreground=[("selected", COLORS["white"]), ("!selected", COLORS["black"])])
 
     # Frame to constrain notebook width
-    notebook_frame = tk.Frame(root, background=COLORS["very_pale_blue"])
+    notebook_frame = tk.Frame(root, background=config.master_bg)
     notebook_frame.pack(pady=(int(260 * scaling_factor), 0), padx=int(10 * scaling_factor), fill="x")  # Keep fill="x" for now
 
     notebook = ttk.Notebook(notebook_frame)
@@ -289,10 +300,10 @@ def create_home_screen(conn, cursor):
     # Focal point markers at row 12
     marker_x = int(280 * scaling_factor)
     marker_y = int(18 * scaling_factor)
-    left_canvas = tk.Canvas(root, bg=COLORS["very_pale_blue"], highlightthickness=0, width=int(10 * scaling_factor), height=int(40 * scaling_factor))
+    left_canvas = tk.Canvas(root, bg=config.master_bg, highlightthickness=0, width=int(10 * scaling_factor), height=int(40 * scaling_factor))
     left_canvas.place(x=0, y=int(250 * scaling_factor) + marker_x)
     left_canvas.create_text(5, marker_y, text=">", font=("Arial", 14, "bold"), fill="red", anchor="center")
-    right_canvas = tk.Canvas(root, bg=COLORS["very_pale_blue"], highlightthickness=0, width=int(20 * scaling_factor), height=int(40 * scaling_factor))
+    right_canvas = tk.Canvas(root, bg=config.master_bg, highlightthickness=0, width=int(20 * scaling_factor), height=int(40 * scaling_factor))
     right_canvas.place(x=int(1700 * scaling_factor), y=int(250 * scaling_factor) + marker_x)
     right_canvas.create_text(5, marker_y, text="<", font=("Arial", 14, "bold"), fill="red", anchor="center")
 
@@ -679,7 +690,7 @@ def create_home_screen(conn, cursor):
                     messagebox.showinfo("HA2", "Please select a row to edit!")).place(x=int(1715 * scaling_factor), y=int(350 * scaling_factor))
 
     # Update Transaction Status Buttons
-    btn_frame2 = tk.LabelFrame(root, text="Update Status", font=("Arial", 11), bg=COLORS["very_pale_blue"], padx=int(23 * scaling_factor), pady=int(10 * scaling_factor))
+    btn_frame2 = tk.LabelFrame(root, text="Update Status", font=("Arial", 11), bg=config.master_bg, padx=int(23 * scaling_factor), pady=int(10 * scaling_factor))
     btn_frame2.place(x=int(1715 * scaling_factor), y=int(445 * scaling_factor))
     tk.Button(  btn_frame2, text="Complete", font=("Arial", 11), fg=TEXT_COLORS["Complete"], width=14, height=1,
                 command=lambda: set_status("Complete")).pack(side="top", padx=int(5 * scaling_factor), pady=int(3 * scaling_factor))
@@ -689,7 +700,7 @@ def create_home_screen(conn, cursor):
                 command=lambda: set_status("Forecast")).pack(side="top", padx=int(5 * scaling_factor), pady=int(3 * scaling_factor))
     
     # Set/Clear Flag Buttons
-    flag_frame = tk.LabelFrame(root, text="Set/Clear Flag", font=("Arial", 11), bg=COLORS["very_pale_blue"], padx=int(5 * scaling_factor), pady=int(10 * scaling_factor))
+    flag_frame = tk.LabelFrame(root, text="Set/Clear Flag", font=("Arial", 11), bg=config.master_bg, padx=int(5 * scaling_factor), pady=int(10 * scaling_factor))
     flag_frame.place(x=int(1715 * scaling_factor), y=int(600 * scaling_factor))
     tk.Button(flag_frame, text="Set", width=6, bg=COLORS["yellow"], command=lambda: set_flag(1)).grid(row=1, column=0, padx=int(4 * scaling_factor))
     tk.Button(flag_frame, text="Set", width=6, bg=COLORS["green"], command=lambda: set_flag(2)).grid(row=1, column=1, padx=int(4 * scaling_factor))
@@ -697,30 +708,30 @@ def create_home_screen(conn, cursor):
     tk.Button(flag_frame, text="Clear Flag", width=23, command=clear_flag).grid(row=2, column=0, columnspan=3, padx=int(4 * scaling_factor), pady=int(5 * scaling_factor))
 
     # Row Marker Buttons
-    btn_frame3 = tk.LabelFrame(root, text="Set/Clear Row Marker", font=("Arial", 11), bg=COLORS["very_pale_blue"], padx=int(5 * scaling_factor), pady=int(5 * scaling_factor))
+    btn_frame3 = tk.LabelFrame(root, text="Set/Clear Row Marker", font=("Arial", 11), bg=config.master_bg, padx=int(5 * scaling_factor), pady=int(5 * scaling_factor))
     btn_frame3.place(x=int(1715 * scaling_factor), y=int(710 * scaling_factor))
     tk.Button(btn_frame3, text="Set/Clear Row Marker", width=23, bg=COLORS["marker"], command=set_marker).pack(side="top", padx=int(5 * scaling_factor), pady=int(5 * scaling_factor))
     tk.Button(btn_frame3, text="Clear ALL Row Markers", width=23, command=clear_all_markers).pack(side="top", padx=int(5 * scaling_factor), pady=int(10 * scaling_factor))
 
     # Transaction Count Frame
-    tc_frame = tk.LabelFrame(root, text="Transaction Count", font=("Arial", 11), bg=COLORS["very_pale_blue"], padx=int(5 * scaling_factor), pady=int(5 * scaling_factor))
+    tc_frame = tk.LabelFrame(root, text="Transaction Count", font=("Arial", 11), bg=config.master_bg, padx=int(5 * scaling_factor), pady=int(5 * scaling_factor))
     tc_frame.place(x=int(1715 * scaling_factor), y=int(830 * scaling_factor), width=int(192 * scaling_factor), height=int(130 * scaling_factor))
     tk.Label(tc_frame, text="   Forecast:", anchor=tk.W, width=16, font=("Arial", 11), 
-             bg=COLORS["very_pale_blue"], fg=TEXT_COLORS["Forecast"]).place(x=int(10 * scaling_factor), y=0)
+             bg=config.master_bg, fg=TEXT_COLORS["Forecast"]).place(x=int(10 * scaling_factor), y=0)
     tk.Label(tc_frame, text=str(tc_forecast_var.get()), anchor=tk.E, width=4, font=("Arial", 11), 
-             bg=COLORS["very_pale_blue"], fg=TEXT_COLORS["Forecast"]).place(x=int(120 * scaling_factor), y=0)
+             bg=config.master_bg, fg=TEXT_COLORS["Forecast"]).place(x=int(120 * scaling_factor), y=0)
     tk.Label(tc_frame, text="Processing:", anchor=tk.W, width=16, font=("Arial", 11), 
-             bg=COLORS["very_pale_blue"], fg=TEXT_COLORS["Processing"]).place(x=int(10 * scaling_factor), y=int(25 * scaling_factor))
+             bg=config.master_bg, fg=TEXT_COLORS["Processing"]).place(x=int(10 * scaling_factor), y=int(25 * scaling_factor))
     tk.Label(tc_frame, text=str(tc_processing_var.get()), anchor=tk.E, width=4, font=("Arial", 11), 
-             bg=COLORS["very_pale_blue"], fg=TEXT_COLORS["Processing"]).place(x=int(120 * scaling_factor), y=int(25 * scaling_factor))
+             bg=config.master_bg, fg=TEXT_COLORS["Processing"]).place(x=int(120 * scaling_factor), y=int(25 * scaling_factor))
     tk.Label(tc_frame, text="   Complete:", anchor=tk.W, width=16, font=("Arial", 11), 
-             bg=COLORS["very_pale_blue"], fg=TEXT_COLORS["Complete"]).place(x=int(10 * scaling_factor), y=int(50 * scaling_factor))
+             bg=config.master_bg, fg=TEXT_COLORS["Complete"]).place(x=int(10 * scaling_factor), y=int(50 * scaling_factor))
     tk.Label(tc_frame, text=str(tc_complete_var.get()), anchor=tk.E, width=4, font=("Arial", 11), 
-             bg=COLORS["very_pale_blue"], fg=TEXT_COLORS["Complete"]).place(x=int(120 * scaling_factor), y=int(50 * scaling_factor))
+             bg=config.master_bg, fg=TEXT_COLORS["Complete"]).place(x=int(120 * scaling_factor), y=int(50 * scaling_factor))
     tk.Label(tc_frame, text="          Total:", anchor=tk.W, width=16, font=("Arial", 11), 
-             bg=COLORS["very_pale_blue"], fg=COLORS["black"]).place(x=int(10 * scaling_factor), y=int(75 * scaling_factor))
+             bg=config.master_bg, fg=COLORS["black"]).place(x=int(10 * scaling_factor), y=int(75 * scaling_factor))
     tk.Label(tc_frame, text=str(tc_total_var.get()), anchor=tk.E, width=4, font=("Arial", 11), 
-             bg=COLORS["very_pale_blue"], fg=COLORS["black"]).place(x=int(120 * scaling_factor), y=int(75 * scaling_factor))
+             bg=config.master_bg, fg=COLORS["black"]).place(x=int(120 * scaling_factor), y=int(75 * scaling_factor))
 
     # Display Firefly ID# Control and Initialise
     
@@ -728,8 +739,8 @@ def create_home_screen(conn, cursor):
     checked_img = tk.PhotoImage(file=resource_path("icons/checked_16.png")).zoom(int(scaling_factor))
 
     tk.Label(root, text="Show GC ID in list", anchor=tk.W, width=int(14 * scaling_factor), font=("Arial", 11), 
-             bg=COLORS["very_pale_blue"], fg=COLORS["black"]).place(x=int(1750 * scaling_factor), y=int(970 * scaling_factor))
-    ff_box=tk.Button(root, image=unchecked_img, bg=COLORS["very_pale_blue"], command=toggle_ffid)
+             bg=config.master_bg, fg=COLORS["black"]).place(x=int(1750 * scaling_factor), y=int(970 * scaling_factor))
+    ff_box=tk.Button(root, image=unchecked_img, bg=config.master_bg, command=toggle_ffid)
     ff_box.place(x=int(1720 * scaling_factor), y=int(970 * scaling_factor))
     
     # Initialise GC ID 'checkbox' image
@@ -751,9 +762,9 @@ def create_home_screen(conn, cursor):
 
     root.mainloop()
 
-
 if __name__ == "__main__":
     main()
+
 
 
 
