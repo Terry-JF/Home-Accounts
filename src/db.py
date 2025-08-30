@@ -36,7 +36,7 @@ def open_db():
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         logger.debug(f"Database open: {db_path}")
-        return conn, cursor
+        return conn, cursor, db_path
     except sqlite3.Error as e:
         raise Exception(f"Failed to open database: {e}")    
     

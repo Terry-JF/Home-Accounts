@@ -1,11 +1,12 @@
 # gui_maint_rules.py
-# Functions for managing rules forms and groups in the HA2 project
+# Functions for managing rules forms and groups in the HA project
 
 import tkinter as tk
 from tkinter import ttk, messagebox
 from tkinter import *
 import logging
 import traceback
+import sqlite3
 from db import (fetch_trigger_option, fetch_action_option, create_rule_group, fetch_account_full_name, fetch_category_name, fetch_subcategory_name)
 from ui_utils import (VerticalScrolledFrame, resource_path, open_form_with_position, close_form_with_position)
 from gui_maint_rule_edit import edit_rule_form
@@ -127,15 +128,6 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
         if group_states.get(group_id, False):
             #logger.debug(f"Collapsing Group ID {group_id}")
             group_states[group_id] = False
-        #    tree.place_forget()
-        #    if new_rule_btn:
-        #        new_rule_btn.place_forget()
-        #    if group_id in form.ui_elements.get('global_up_btns', {}):
-        #        form.ui_elements['global_up_btns'][group_id].place_forget()
-        #    if group_id in form.ui_elements.get('global_down_btns', {}):
-        #        form.ui_elements['global_down_btns'][group_id].place_forget()
-        #    for rule_id, bf in [(r[0], bf) for r in rules for rule_id, bf in button_frames.items() if r[0] == rule_id]:
-        #        bf.place_forget()
             group_frame.configure(height=group_frame_collapsed)
         else:
             #logger.debug(f"Expanding Group ID {group_id}")
@@ -208,6 +200,7 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
                         if bbox and bbox != "":
                             #logger.debug("inside - if bbox:")
                             adjusted_y = tree_y + bbox[1] + bbox_adjustment
+                            #logger.debug(f"1- tree_y={tree_y}, bbox[1]={bbox[1]}, bbox_adjustment={bbox_adjustment}, bf_y_offset={bf_y_offset}")
                             bf.place(x=bf_x, y=adjusted_y, width=bf_width, height=icon_size)
                             #logger.debug(f"Placed button frame for Rule ID {rule_id} at x={bf_x}, y={adjusted_y}")
                         else:
@@ -239,8 +232,6 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
             group_frame.configure(height=max_y + int(10 * scaling_factor))
             group_heights[group_id] = max_y + int(10 * scaling_factor)
             #logger.debug(f"Configured group frame height for Group ID {group_id} to {max_y + int(10 * scaling_factor)}")
-        else:
-            logger.warning(f"Group frame for Group ID {group_id} not found in group_frames")
 
     def on_tree_click(event, tree, tree_height, scrolled_frame, group_frames, close_button, bottom_new_rule_group_button, rules, group_id, global_up_btns, global_down_btns):
         #logger.debug("   ** on_tree_click() ** ")
@@ -284,18 +275,14 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
                 trig_desc_sp = trig_desc.ljust(35)                      # set to be exact size for better alignment
                 if 1 <= trigo_id <= 3:                                  # Amount - Numeric field (6d2 format)
                     trigger_lines.append(f'   {trig_desc_sp} £{trig_value}')
-            
                 elif 4 <= trigo_id <= 15:                               # Tag or Description
                     trigger_lines.append(f'   {trig_desc_sp} "{trig_value}"')
-                
                 elif 16 <= trigo_id <= 19:                              # Account Name
                     acc_id = int(trig_value)
                     acc_name = fetch_account_full_name(cursor, acc_id, year)
                     trigger_lines.append(f'   {trig_desc}   {acc_name}')
-                
                 elif 20 <= trigo_id <= 22:                              # Date
                     trigger_lines.append(f'   {trig_desc_sp} {trig_value}')
-                
                 elif 23 <= trigo_id <= 27:                              # No field required
                     trigger_lines.append(f'   {trig_desc}')
             else:
@@ -312,10 +299,8 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
                 act_desc_sp = act_desc.ljust(30)                         # set to be exactly 30 chars
                 if acto_id in (1, 2, 10, 11, 12):                       # Text field (40 chars)
                     action_lines.append(f'   {act_desc_sp} "{act_value}"')
-                        
                 elif acto_id in (3, 4, 5, 6, 7):                        # No field required
                     action_lines.append(f'   {act_desc_sp}')
-                        
                 elif acto_id == 8:                                      # Two strings for parent and sub-category
                     try:
                         pid, cid = map(int, act_value.split(',')) if act_value and ',' in act_value else (0, 0)
@@ -324,7 +309,6 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
                     parent_cat = fetch_category_name(cursor, pid, year)
                     child_cat = fetch_subcategory_name(cursor, pid, cid, year)
                     action_lines.append(f'   {act_desc} - {parent_cat} - {child_cat}')
-                        
                 elif acto_id in (13, 14):                               # Account name
                     acc_id = int(act_value)
                     acc_name = fetch_account_full_name(cursor, acc_id, year)
@@ -495,7 +479,7 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
                 tree.bind("<Button-1>", lambda e, t=tree, gid=group_id: on_tree_click(e, t, tree_height, scrolled_frame, form.ui_elements['group_frames'], form.ui_elements['close_button'], form.ui_elements['bottom_new_rule_group_button'], group_rules[gid], gid, form.ui_elements['global_up_btns'], form.ui_elements['global_down_btns']))
                 tree.bind("<<TreeviewSelect>>", lambda e: logger.debug(f"Selected rule: {tree.selection()}"))
 
-                button_y =  bf_y_offset
+                button_y = bf_y_offset
                 for rule_id, rule_name, rule_active, rule_trigger_mode, rule_proceed in rules:
                     cursor.execute("SELECT TrigO_ID, Value, Trigger_Sequence FROM Triggers WHERE Rule_ID = ? ORDER BY Trigger_Sequence", (rule_id,))
                     triggers = cursor.fetchall()
@@ -529,8 +513,105 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
                     tree.item(f"I{rule_id}", tags=("rule", str(rule_id)))
                     button_y += icon_size
 
-                new_rule_btn = tk.Button(group_frame, text="New Rule", width=int(100 / 10 * scaling_factor), font=("Arial", 10), command=lambda gid=group_id: messagebox.showinfo("Info", 
-                                                                                        f"Add new rule to group {gid}", parent=form), bg="lightgrey")
+                # New Rule button implementation
+                def add_new_rule(gid=group_id):
+                    try:
+                        # Find the correct group_frame and tree for the given group_id
+                        group_info = next((g, gf, t) for g, gf, t in form.ui_elements['group_frames'] if g == gid)
+                        if not group_info:
+                            logger.error(f"Group ID {gid} not found in group_frames")
+                            return
+                        _, group_frame, tree = group_info
+
+                        # Determine new Rule_Sequence
+                        cursor.execute("SELECT MAX(Rule_Sequence) FROM Rules WHERE Group_ID = ?", (gid,))
+                        max_sequence = cursor.fetchone()[0]
+                        new_sequence = (max_sequence or 0) + 1
+                        
+                        # Ensure unique Rule_Name
+                        base_name = "New Rule"
+                        new_name = base_name
+                        counter = 1
+                        while True:
+                            cursor.execute("SELECT COUNT(*) FROM Rules WHERE Rule_Name = ?", (new_name,))
+                            if cursor.fetchone()[0] == 0:
+                                break
+                            counter += 1
+                            new_name = f"{base_name} ({counter})"
+                            #logger.debug(f"new name = {new_name}")
+                        
+                        # Insert new rule into Rules table
+                        cursor.execute("""
+                            INSERT INTO Rules (Group_ID, Rule_Name, Rule_Sequence, Rule_Enabled, Rule_Active, Rule_Trigger_Mode, Rule_Proceed)
+                            VALUES (?, ?, ?, 1, 1, 'ALL', 0)
+                        """, (gid, new_name, new_sequence))
+                        new_rule_id = cursor.lastrowid
+                        conn.commit()
+                        #logger.debug(f"new_rule_id = {new_rule_id}")
+                        
+                        # Add new rule to Treeview
+                        new_iid = f"I{new_rule_id}"
+                        tree.insert("", "end", iid=new_iid, values=(new_name, "Active", "ALL", "Proceed", "   Show Triggers", "   Show Actions"), tags=("rule", str(new_rule_id)))
+                        
+                        # Calculate button_y using Treeview bbox for precise alignment
+                        tree.update_idletasks()
+                        bbox = tree.bbox(new_iid, 0) if tree.exists(new_iid) else None
+                        button_y = tree_y + bbox[1] if bbox and bbox != "" else bf_y_offset + len(group_rules[gid]) * icon_size
+                        #logger.debug(f"2- button_y={button_y}, tree_y={tree_y}, bbox[1]={bbox[1]}, bbox_adjustment={bbox_adjustment}, bf_y_offset={bf_y_offset}")
+                        
+                        # Create button frame for new rule
+                        #logger.debug(f"group_frame = {group_frame}, button_y = {button_y}")
+                        buttons_frame = ttk.Frame(group_frame, width=bf_width, height=icon_size, style="Debug.TFrame")
+                        buttons_frame.place(x=bf_x, y=button_y, width=bf_width, height=icon_size)
+                        button_frames[new_rule_id] = buttons_frame
+                        form.ui_elements.setdefault('button_frames', {})[new_rule_id] = buttons_frame
+                        
+                        # Add action buttons to new rule
+                        for i, icon in enumerate(icons):
+                            try:
+                                img = tk.PhotoImage(file=resource_path(f"icons/{icon}")).zoom(int(scaling_factor))
+                                image_refs.append(img)
+                                bg_col = "red" if i == 1 else "lightgray"
+                                btn = tk.Button(buttons_frame, image=img, bg=bg_col, width=icon_size, height=icon_size, 
+                                                command=lambda r=new_rule_id, a=i, g=gid: button_action(r, a, g, conn, cursor, form))
+                                btn.image = img
+                                btn.place(x=i * 53 * scaling_factor, y=0)
+                            except Exception as e:
+                                logger.error(f"Error loading icon {icon} for new rule: {e}")
+                                btn = tk.Button(buttons_frame, text=f"Btn{i+1}", width=6, height=2, font=("Arial", 10), 
+                                                command=lambda r=new_rule_id, a=i, g=gid: button_action(r, a, g, conn, cursor, form))
+                                btn.place(x=i * 53 * scaling_factor, y=0)
+                        
+                        # Update group_rules and rule_data
+                        group_rules[gid].append((new_rule_id, new_name, 1, "ALL", 1))
+                        rule_data[new_rule_id] = {"triggers": [], "actions": []}
+                        
+                        # Update UI
+                        total_rows = count_visible_rows(tree)
+                        tree_height = total_rows * icon_size + tree_height_padding
+                        group_heights[gid] = tree_height + group_frame_padding
+                        if group_states.get(gid, False):
+                            tree.place(x=tree_x, y=tree_y, width=tree_width, height=tree_height)
+                            new_rule_buttons[gid].place(x=bf_x, y=tree_height + new_rule_button_offset, width=new_rule_button_width, height=new_rule_button_height)
+                            if gid in form.ui_elements['global_up_btns']:
+                                form.ui_elements['global_up_btns'][gid].place(x=up_button_x, y=tree_height + up_down_button_offset, width=icon_size, height=up_down_button_height)
+                            if gid in form.ui_elements['global_down_btns']:
+                                form.ui_elements['global_down_btns'][gid].place(x=down_button_x, y=tree_height + up_down_button_offset, width=icon_size, height=up_down_button_height)
+                            group_frame.configure(height=tree_height + group_frame_padding)
+                        
+                        update_all_group_positions(form, scrolled_frame)
+                        tree.update_idletasks()
+                        buttons_frame.update_idletasks()
+                        form.update_idletasks()
+                        
+                        # Open edit form for the new rule, indicating it's a new rule
+                        edit_rule_form(new_rule_id, gid, conn, cursor, form, scrolled_frame, parent, is_new_rule=True)
+                        
+                    except Exception as e:
+                        logger.error(f"Error adding new rule to Group ID {gid}: {e}\n{traceback.format_exc()}")
+                        messagebox.showerror("Error", f"Failed to add new rule: {e}", parent=form)
+
+                new_rule_btn = tk.Button(group_frame, text="New Rule", width=int(100 / 10 * scaling_factor), font=("Arial", 10), command=add_new_rule, bg="lightgrey")
                 new_rule_buttons[group_id] = new_rule_btn
 
                 up_img = tk.PhotoImage(file=resource_path("icons/7_up-24.png")).zoom(int(scaling_factor))
@@ -631,7 +712,7 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
     def button_action(rule_id, action_index, group_id, conn, cursor, form):
         #logger.debug("   ** button_action() ** ")
         actions = {
-            0: lambda r, g: edit_rule_form(r, g, conn, cursor, form, scrolled_frame, parent),
+            0: lambda r, g: edit_rule_form(r, g, conn, cursor, form, scrolled_frame, parent, is_new_rule=False),
             1: lambda r, g: delete_rule(r, g, conn, cursor, form),
             2: lambda r, g: messagebox.showinfo("See Matching", f"Show matching transactions for rule {r}", parent=form),
             3: lambda r, g: messagebox.showinfo("Apply Rule", f"Apply rule {r} to selected transactions", parent=form),
@@ -714,7 +795,7 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
 
     def show_group_menu(group_id, group_name):
         # Placeholder for group menu
-        logger.debug(f"Showing menu for Group ID {group_id}, Name: {group_name}")
+        #logger.debug(f"Showing menu for Group ID {group_id}, Name: {group_name}")
         messagebox.showinfo("Group Menu", f"Menu for Group {group_name} (ID: {group_id})")
 
     def create_new_group_popup(parent, conn, cursor):                       # Win_ID = 23
@@ -757,7 +838,6 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
         tk.Button(popup, text="Save", command=save_group).place(x=80 * scaling_factor, y=100 * scaling_factor)
         tk.Button(popup, text="Cancel", command=lambda: [close_form_with_position(popup, conn, cursor, win_id), parent.lift()]).place(x=160 * scaling_factor, y=100 * scaling_factor)
 
-
     form.bind("<<RefreshRules>>", lambda e: refresh_rules())
     try:
         refresh_rules()
@@ -768,12 +848,6 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
         form.update()
 
     return form
-
-
-
-
-
-
 
 
 

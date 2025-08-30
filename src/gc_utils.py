@@ -551,7 +551,7 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
             messagebox.showerror("Error", f"Failed to load JSON file: {e}")
             logging.error(f"Failed to load {filepath}: {e}")
 
-    def test_rules_now():
+    def test_rules_now(root):
         """Import the selected JSON file into the database."""
         if not files_var.get():
             messagebox.showerror("Error", "Please select a JSON file.")
@@ -694,7 +694,7 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
     show_button = tk.Button(tab3, text="Show JSON file", width=25, command=lambda: show_now())
     show_button.place(x=int(300 * scaling_factor), y=int(250 * scaling_factor))
 
-    test_import_button = tk.Button(tab3, text="Import JSON file", width=25, command=lambda: test_rules_now())
+    test_import_button = tk.Button(tab3, text="Import JSON file", width=25, command=lambda: test_rules_now(parent))
     test_import_button.place(x=int(300 * scaling_factor), y=int(300 * scaling_factor))
 
     tk.Button(tab3, text="Close", width=15, 
@@ -807,6 +807,9 @@ def check_requisition_status(conn, requisition_id, parent, progress_dialog=None)
 
 def setup_gc_requisition(conn, acc_id, parent, form):
     logger = logging.getLogger('HA.setup_gc_requisition')
+    # Setup Scaling
+    scaling_factor = form.winfo_fpixels('1i') / 96
+
     cur = conn.cursor()
     cur.execute("""
         SELECT a.Acc_Name, gc.Country_Code
@@ -840,11 +843,11 @@ def setup_gc_requisition(conn, acc_id, parent, form):
         dialog.title("Select Bank")
         dialog.transient(parent)
         dialog.attributes("-topmost", True)
-        center_window(dialog, 400, 150)
-        tk.Label(dialog, text="Select GoCardless Bank Name:").pack(pady=5)
-        combo = ttk.Combobox(dialog, textvariable=selected, values=inst_names, width=50)
+        center_window(dialog, int(400 * scaling_factor), int(150 * scaling_factor))
+        tk.Label(dialog, text="Select GoCardless Bank Name:", font=("Arial", 10)).pack(pady=5)
+        combo = ttk.Combobox(dialog, textvariable=selected, font=("Arial", 10), values=inst_names, width=50)
         combo.pack(pady=5)
-        tk.Button(dialog, text="OK", command=dialog.destroy).pack(pady=5)
+        tk.Button(dialog, text="OK", font=("Arial", 10), command=dialog.destroy).pack(pady=5)
         dialog.grab_set()
         dialog.wait_window()
         institution_name = selected.get()
@@ -870,16 +873,16 @@ def setup_gc_requisition(conn, acc_id, parent, form):
     auth_dialog.title("Authorize Bank Account")
     auth_dialog.transient(parent)
     auth_dialog.attributes("-topmost", True)
-    center_window(auth_dialog, 450, 200)
-    tk.Label(auth_dialog, text=f"Please authorize {institution_name} in your browser:", wraplength=400).pack(pady=5)
-    link_entry = tk.Entry(auth_dialog, width=50)
+    center_window(auth_dialog, int(400 * scaling_factor), int(200 * scaling_factor))
+    tk.Label(auth_dialog, text=f"Please authorize {institution_name} in your browser:", font=("Arial", 10), wraplength=400).pack(pady=5)
+    link_entry = tk.Entry(auth_dialog, font=("Arial", 10), width=50)
     link_entry.insert(0, data['link'])
     link_entry.config(state="readonly")
     link_entry.pack(pady=5)
-    tk.Button(auth_dialog, text="Copy Link", command=lambda: parent.clipboard_clear() or parent.clipboard_append(data['link'])).pack(pady=5)
-    tk.Button(auth_dialog, text="Open in Browser", command=lambda: webbrowser.open(data['link'])).pack(pady=5)
-    tk.Label(auth_dialog, text="Waiting for authorization...").pack(pady=5)
-    progress = ttk.Progressbar(auth_dialog, mode="indeterminate", length=200)
+    tk.Button(auth_dialog, text="Copy Link", font=("Arial", 10), command=lambda: parent.clipboard_clear() or parent.clipboard_append(data['link'])).pack(pady=5)
+    tk.Button(auth_dialog, text="Open in Browser", font=("Arial", 10), command=lambda: webbrowser.open(data['link'])).pack(pady=5)
+    tk.Label(auth_dialog, text="Waiting for authorization...", font=("Arial", 10)).pack(pady=5)
+    progress = ttk.Progressbar(auth_dialog, mode="indeterminate", length=int(300 * scaling_factor))
     progress.pack(pady=5)
     progress.start(10)
     
@@ -1033,7 +1036,7 @@ def fetch_transactions(access_token, requisition_id, output_file, fetch_days, co
                 logger.error(f"Error fetching transactions for account {account_id}: {response.status_code} {response.text}")
                 continue
             trans_data = response.json()
-            logger.debug(f"Full API response for transactions: {json.dumps(trans_data, indent=2)}")
+            #logger.debug(f"Full API response for transactions: {json.dumps(trans_data, indent=2)}")
             
             # Save raw JSON with account_id and requisition_id metadata
             transactions = {

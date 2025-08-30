@@ -13,7 +13,7 @@ from ui_utils import (VerticalScrolledFrame, resource_path, open_form_with_posit
 # Set up logging
 logger = logging.getLogger('HA.maint_rule_edit')
 
-def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame, root):                  # Win_ID = 24
+def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame, root, is_new_rule=False):                  # Win_ID = 24
     # Create the Edit Rule form as a top-level window
     edit_form = tk.Toplevel(form)
     edit_form.title("Edit Rule")
@@ -104,7 +104,7 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame, root):
     strict_options = ["ALL", "Any"]
     strict_combo = ttk.Combobox(fixed_frame, values=strict_options, width=10, state="readonly", font=("Arial", 10))
     strict_combo.grid(row=5, column=1, rowspan=2, sticky="w", padx=10 * scaling_factor)
-    strict_combo.set("ALL" if rule_trigger_mode == "All" else "Any")
+    strict_combo.set("Any" if rule_trigger_mode == "Any" else "ALL")
     tk.Label(fixed_frame, text="In strict mode ALL triggers must fire for the action(s) to be executed.", font=("Arial", 10), bg="lightgray").grid(row=5, column=2, sticky="w", padx=10 * scaling_factor)
     tk.Label(fixed_frame, text="In non-strict mode, ANY trigger is enough for the action(s) to be executed.", font=("Arial", 10), bg="lightgray").grid(row=6, column=2, sticky="w", padx=10 * scaling_factor)
 
@@ -298,7 +298,8 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame, root):
         combo.bind("<<ComboboxSelected>>", make_trigger_handler())
 
         trigger_rows.append((None, delete_btn, combo, value_widget, row, extra_widget, None))
-        add_trigger_btn.grid(row=row + 1, column=0, columnspan=4)
+        add_trigger_btn.grid(row=row + 1, column=0, columnspan=2)
+        comment.grid(row=row + 1, column=2, columnspan=2)
         edit_scrolled_frame.canvas.configure(scrollregion=edit_scrolled_frame.canvas.bbox("all"))
         edit_form.update_idletasks()
         #logger.debug(f"Added new trigger row at row {row}")
@@ -326,7 +327,8 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame, root):
                 if ew:
                     ew.grid(row=j + 1, column=3)
                 rows[j] = (tid, dbtn, cb, vw, j + 1, ew, tid_id)
-            add_trigger_btn.grid(row=len(rows) + 1, column=0, columnspan=4)
+            add_trigger_btn.grid(row=len(rows) + 1, column=0, columnspan=2)
+            comment.grid(row=len(rows) + 1, column=2, columnspan=2)
             edit_scrolled_frame.canvas.configure(scrollregion=edit_scrolled_frame.canvas.bbox("all"))
             edit_form.update_idletasks()
             #logger.debug(f"Deleted trigger ID {trigger_id}")
@@ -354,14 +356,19 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame, root):
             if ew:
                 ew.grid(row=j + 1, column=3)
             rows[j] = (tid, dbtn, cb, vw, j + 1, ew, tid_id)
-        add_trigger_btn.grid(row=len(rows) + 1, column=0, columnspan=4)
+        add_trigger_btn.grid(row=len(rows) + 1, column=0, columnspan=2)
+        comment.grid(row=len(rows) + 1, column=2, columnspan=2)
         edit_scrolled_frame.canvas.configure(scrollregion=edit_scrolled_frame.canvas.bbox("all"))
         edit_form.update_idletasks()
         #logger.debug(f"Deleted new trigger row at row {row}")
 
     # Create button to add new trigger
     add_trigger_btn = tk.Button(triggers_frame, text="Add new trigger", font=("Arial", 10), width=20, command=add_trigger_row)
-    add_trigger_btn.grid(row=len(triggers)+1, column=0, columnspan=4, sticky="w", padx=10 * scaling_factor, pady=10 * scaling_factor)
+    add_trigger_btn.grid(row=len(triggers)+1, column=0, columnspan=2, sticky="w", padx=10 * scaling_factor, pady=10 * scaling_factor)
+    
+    comment = tk.Label(triggers_frame, text="(Tag and Description text are case sensitive during matching)", font=("Arial", 9, "italic"))
+    comment.grid(row=len(triggers)+1, column=2, columnspan=2, sticky="w", padx=10 * scaling_factor, pady=5 * scaling_factor)
+    
 
     ##### Actions frame starts here ###################################
     actions_frame = ttk.LabelFrame(edit_scrolled_frame.interior, text="Rule will", width=960 * scaling_factor)
@@ -800,8 +807,9 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame, root):
 
             conn.commit()
             timed_message(edit_form, "Success", "Rule updated successfully", 3000)
-            close_edit_rule_form(edit_form)
-            form.event_generate("<<RefreshRules>>")
+            is_new_rule = False
+            close_edit_rule_form(edit_form, rule_id, is_new_rule)
+            #form.event_generate("<<RefreshRules>>")
             logger.debug(f"Saved changes for Rule ID {rule_id}")
         except Exception as e:
             logger.error(f"Error saving rule changes for Rule ID {rule_id}: {e}\n{traceback.format_exc()}")
@@ -815,17 +823,32 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame, root):
     edit_save_button = tk.Button(buttons_frame, text="Save changes", command=save_rule_changes, bg="white", font=("Arial", 10))
     edit_save_button.pack(side="left", padx=50 * scaling_factor, pady=5 * scaling_factor)
 
-    edit_close_button = tk.Button(buttons_frame, text="Close - do not save", command=lambda: close_edit_rule_form(edit_form), bg="white", font=("Arial", 10))
+    edit_close_button = tk.Button(buttons_frame, text="Close - do not save", command=lambda: close_edit_rule_form(edit_form, rule_id, is_new_rule), bg="white", font=("Arial", 10))
     edit_close_button.pack(side="right", padx=50 * scaling_factor, pady=5 * scaling_factor)
     
     #logger.debug(f"#######  edit_form.action_row: {action_rows}")
     #logger.debug(f"#######  edit_form.next_action_row: {edit_form.next_action_row}")
     
-    def close_edit_rule_form(edit_form):
+    def close_edit_rule_form(edit_form, rule_id, is_new_rule):
         # Close the edit form
         scrolled_frame.canvas.focus_set()
         scrolled_frame.canvas.bind_all("<MouseWheel>", scrolled_frame._on_mousewheel)
+        if is_new_rule:
+            # Check if the rule has no triggers or actions (i.e., unsaved)
+            cursor.execute("SELECT COUNT(*) FROM Triggers WHERE Rule_ID = ?", (rule_id,))
+            trigger_count = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM Actions WHERE Rule_ID = ?", (rule_id,))
+            action_count = cursor.fetchone()[0]
+            if trigger_count == 0 and action_count == 0:
+                # Delete the unsaved new rule
+                try:
+                    cursor.execute("DELETE FROM Rules WHERE Rule_ID = ?", (rule_id,))
+                    conn.commit()
+                    logger.debug(f"Deleted unsaved new Rule ID {rule_id}")
+                except Exception as e:
+                    logger.error(f"Error deleting unsaved Rule ID {rule_id}: {e}\n{traceback.format_exc()}")
         close_form_with_position(edit_form, conn, cursor, win_id)
+        form.event_generate("<<RefreshRules>>")  # Trigger UI refresh
 
     edit_form.update_idletasks()
     logger.debug(f"Opened Edit Rule form for Rule ID {rule_id}")

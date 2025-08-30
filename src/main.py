@@ -34,7 +34,8 @@ accounts = []  #Global variable
 def main():
     # Open database connection
     logger.debug("Calling open_db()")
-    conn, cursor = open_db()
+    conn, cursor, db_path = open_db()
+    logger.debug(f"Database opened at {db_path}")
     
     # Start the GUI, passing the connection and cursor
     logger.debug("Calling create_home_screen()")
@@ -47,8 +48,6 @@ def main():
 def create_home_screen(conn, cursor):
     global accounts  # Keep global for now, could refactor later
     global year_var
-    
-    logger.debug(f"master_bg: {config.master_bg}")
     
     root = tk.Tk()
     win_id = 15

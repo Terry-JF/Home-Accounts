@@ -193,19 +193,19 @@ CREATE TABLE "Regular" (
 	"Reg_Query_Flag"	INTEGER,
 	PRIMARY KEY("Reg_ID" AUTOINCREMENT)
 )
-CREATE TABLE "Rule_Tags" (
-    "Tag_ID" INTEGER,
-    "Rule_ID" INTEGER NOT NULL,
-    "Tag_Text" TEXT NOT NULL,
-    PRIMARY KEY("Tag_ID" AUTOINCREMENT),
-    FOREIGN KEY("Rule_ID") REFERENCES "Rules"("Rule_ID")
-)
 CREATE TABLE "RuleGroups" (
 	"Group_ID"	INTEGER,
 	"Group_Name"	TEXT NOT NULL,
 	"Group_Sequence"	INTEGER NOT NULL DEFAULT 0,
 	"Group_Enabled"	INTEGER NOT NULL DEFAULT 1,
 	PRIMARY KEY("Group_ID" AUTOINCREMENT)
+)
+CREATE TABLE "Rule_Tags" (
+    "Tag_ID" INTEGER,
+    "Rule_ID" INTEGER NOT NULL,
+    "Tag_Text" TEXT NOT NULL,
+    PRIMARY KEY("Tag_ID" AUTOINCREMENT),
+    FOREIGN KEY("Rule_ID") REFERENCES "Rules"("Rule_ID")
 )
 CREATE TABLE "Rules" (
 	"Rule_ID"	INTEGER,
@@ -243,6 +243,15 @@ CREATE TABLE "Trans" (
 	"Tr_Acc_To"	INTEGER,
 	"Tr_FF_Journal_ID"	INTEGER,
 	PRIMARY KEY("Tr_ID" AUTOINCREMENT)
+)
+CREATE TABLE "Trans_Rules" (
+	"Trule_ID"	INTEGER,
+	"Tr_ID"	INTEGER NOT NULL,
+	"Rule_ID"	INTEGER NOT NULL,
+	"Rule_Desc"	TEXT NOT NULL,
+	PRIMARY KEY("Trule_ID" AUTOINCREMENT),
+	FOREIGN KEY("Rule_ID") REFERENCES "Rules"("Rule_ID"),
+	FOREIGN KEY("Tr_ID") REFERENCES "Trans"("Tr_ID")
 )
 CREATE TABLE "Trig_Options" (
 	"TrigO_ID"	INTEGER,

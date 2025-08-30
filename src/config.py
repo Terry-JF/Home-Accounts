@@ -81,7 +81,7 @@ def load_db_settings():
         master_bg=COLORS["very_pale_blue"]
         
     logger.debug(f"Opening database: {dbpath}")
-    logger.debug(f"master_bg: {master_bg}")
+    #logger.debug(f"master_bg: {master_bg}")
 
     """Load settings from the database."""
     try:

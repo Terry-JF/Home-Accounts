@@ -23,8 +23,8 @@ def main():
     try:
         # Open database using db.py's logic
         # Will open test db if APP_ENV = 'test'
-        conn, cur = open_db()
-        logger.info(f"Database opened at {get_config('DB_PATH')}")
+        conn, cur, db_path = open_db()
+        logger.info(f"Database opened at {db_path}")
         
         cur.execute("""
             SELECT Acc_ID, Requisition_ID, Fetch_Days
