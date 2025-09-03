@@ -10,6 +10,33 @@ from logging.handlers import TimedRotatingFileHandler
 # Load .env file from project root
 load_dotenv()
 
+# Set up logging
+logger = logging.getLogger('HA.config')
+
+# Set up logging
+log_levels = {
+    'debug': logging.DEBUG,
+    'info': logging.INFO,
+    'warning': logging.WARNING,
+    'error': logging.ERROR
+}
+# Set up Fonts - standardise use of fonts across app
+ha_normal = "Arial", 10
+ha_normal_bold = "Arial", 10, "bold"
+ha_normal_list = '("Arial", 10)'
+ha_button = "Arial", 11
+ha_large = "Arial", 12
+ha_vlarge = "Arial", 14
+ha_help = "Arial", 16
+ha_note = "Arial", 9, "italic"
+# Headings
+ha_head10 = "Arial", 10, "bold"
+ha_head11 = "Arial", 11, "bold"
+ha_head12 = "Arial", 12, "bold"
+ha_head14 = "Arial", 14, "bold"
+ha_head16 = "Arial", 16, "bold"
+
+
 # Base directory for the project
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -31,43 +58,259 @@ CONFIG = {
 }
 
 # Colour palette dictionaries
-COLORS = {
-    "white": "#FFFFFF",             # Weekday BG, Active Tab Text, Daily Totals Text, Non-Active Tab BG
-    "oldlace": "#DEE7DF",           # Weekend BG
-    "yellow": "#FFFF80",            # Flag 1
-    "green": "#80FF80",             # Flag 2
-    "cyan": "#B9FFFF",              # Flag 4
-    "marker": "#ED87ED",            # Row Marker
-    "pale_blue": "#ADD8E6",         # was "#DFFFFF" - Exit Button
-    "very_pale_blue": "#DFFFFF",    # Main Form BG - was #E6F0FA
-    "very_pale_pink": "#F0D0D0",    # Main Form BG - when in TEST mode
-    "red": "#DD0000",               # was "#FAA0A0" - Daily Totals OD Text
-    "dark_grey": "#5D5D5D",         # Daily Totals BG
-    "pink": "#FADBFD",              # Daily Totals OD BG
-    "black": "#000000",             # Non-Active Tab Text
-    "dark_brown": "#803624",        # Active Tab BG
-    "orange": "#FFC993",            # Drill Down Marker
-    "grey": "#E0E0E0",              # AHB row 8 background
-    "pale_green": "#E0FFE0"         # AHB row 3 background
+DEFAULT_COLORS = {                    # Should never change - used to reset the pallette if the user requests this
+    "home_bg": "#DFFFFF",           # Lup_LupT_ID=2, Lup_Seq=1, Main Form BG
+    "home_test_bg": "#F0D0D0",      # Lup_LupT_ID=2, Lup_Seq=2, Main Form BG - TEST mode
+    "flag_y_bg": "#FFFF80",         # Lup_LupT_ID=2, Lup_Seq=3, Flag BG - Yellow
+    "flag_g_bg": "#80FF80",         # Lup_LupT_ID=2, Lup_Seq=4, Flag BG - Green
+    "flag_b_bg": "#89FFFF",         # Lup_LupT_ID=2, Lup_Seq=5, Flag BG - Blue
+    "flag_dd_bg": "#FFC993",        # Lup_LupT_ID=2, Lup_Seq=6, Flag BG - Drill Down Marker
+    "flag_mk_bg": "#ED87ED",        # Lup_LupT_ID=2, Lup_Seq=7, Flag BG - Reconciliation Marker
+    "tran_wk_bg": "#FFFFFF",        # Lup_LupT_ID=2, Lup_Seq=8, Transaction Treeview - Weekday row BG
+    "tran_we_bg": "#DEE7DF",        # Lup_LupT_ID=2, Lup_Seq=9, Transaction Treeview - Weekend row BG
+    "dtot_bg": "#5D5D5D",           # Lup_LupT_ID=2, Lup_Seq=10, Daily Totals row BG
+    "dtot_ol_bg": "#FADBFD",        # Lup_LupT_ID=2, Lup_Seq=11, Daily Totals row - Over Limit - BG
+    "tab_bg": "#FFFFFF",            # Lup_LupT_ID=2, Lup_Seq=12, Not Selected Tab BG
+    "tab_act_bg": "#803624",        # Lup_LupT_ID=2, Lup_Seq=13, Selected Tab BG
+    "act_but_bg": "#E0FFE0",        # Lup_LupT_ID=2, Lup_Seq=14, Active Button BG
+    "act_but_hi_bg": "#98FB98",     # Lup_LupT_ID=2, Lup_Seq=15, Active Button - Highlighted - BG
+    "last_stat_bg": "#E0E0E0",      # Lup_LupT_ID=2, Lup_Seq=16, Last Statement Balance field BG
+    "title1_bg": "#5D5D5D",         # Lup_LupT_ID=2, Lup_Seq=17, Title/Header BG - AHB Header row
+    "title2_bg": "#E0E0E0",         # Lup_LupT_ID=2, Lup_Seq=18, Title/Header BG - Transaction Treeview Header row
+    "title3_bg": "#000000",         # Lup_LupT_ID=2, Lup_Seq=19, Title/Header BG
+    "exit_but_bg": "#ADD8E6",       # Lup_LupT_ID=2, Lup_Seq=20, Exit/Close Buttons BG
+    "del_but_bg": "#DD0000",        # Lup_LupT_ID=2, Lup_Seq=21, Delete Button BG
+    
+    "complete_tx": "#000000",       # Lup_LupT_ID=3, Lup_Seq=3, Transaction Treeview text - Completed transactions
+    "pending_tx": "#0000FF",        # Lup_LupT_ID=3, Lup_Seq=4, Transaction Treeview text - Pending/Processing transactions
+    "forecast_tx": "#800000",       # Lup_LupT_ID=3, Lup_Seq=5, Transaction Treeview text - Forecast transactions
+    "dtot_tx": "#FFFFFF",           # Lup_LupT_ID=3, Lup_Seq=6, Daily Totals row text
+    "dtot_ol_tx": "#DD0000",        # Lup_LupT_ID=3, Lup_Seq=7, Daily Totals row - Over Limit - text
+    "tab_tx": "#000000",            # Lup_LupT_ID=3, Lup_Seq=8, Not Selected Tab text
+    "tab_act_tx": "#FFFFFF",        # Lup_LupT_ID=3, Lup_Seq=9, Selected Tab text
+    "act_but_tx": "#000000",        # Lup_LupT_ID=3, Lup_Seq=10, Active Button text
+    "act_but_hi_tx": "#000000",     # Lup_LupT_ID=3, Lup_Seq=11, Active Button - Highlighted - text
+    "last_stat_tx": "#000000",      # Lup_LupT_ID=3, Lup_Seq=12, Last Statement Balance field text
+    "title1_tx": "#FFFFFF",         # Lup_LupT_ID=3, Lup_Seq=13, Title/Header text
+    "title2_tx": "#000000",         # Lup_LupT_ID=3, Lup_Seq=14, Title/Header text
+    "title3_tx": "#FFFFFF",         # Lup_LupT_ID=3, Lup_Seq=15, Title/Header text
+    "exit_but_tx": "#000000",       # Lup_LupT_ID=3, Lup_Seq=16, Exit/Close Buttons text
+    "del_but_tx": "#000000",        # Lup_LupT_ID=3, Lup_Seq=17, Delete Button text
+    # Legacy keys - to be kept as not user configurable
+    "white": "#FFFFFF",             # default widget background
+    "black": "#000000",             # default enabled widget text
+    "grey": "#5D5D5D",              # default disabled widget text
 }
 
-TEXT_COLORS = {                     # used for transaction status
-    "Unknown": "gray",
-    "Forecast": "#800040",          # Brown
-    "Processing": "#0000FF",        # Blue
-    "Complete": "#000000"           # Black 
+COLORS = {                            # The active pallette - loaded from database at startup, can be edited by user, and saved to database
+    # Background colours
+    "home_bg": "#DFFFFF",           # very_pale_blue    Main Form BG                            seashell
+    "home_test_bg": "#F0D0D0",      # very_pale_pink    Main Form BG - TEST mode
+    "flag_y_bg": "#FFFF80",         # yellow            Flag BG - Yellow
+    "flag_g_bg": "#80FF80",         # green             Flag BG - Green
+    "flag_b_bg": "#89FFFF",         # cyan              Flag BG - Blue
+    "flag_dd_bg": "#FFC993",        # orange            Flag BG - Drill Down Marker             bright orange
+    "flag_mk_bg": "#ED87ED",        # marker            Flag BG - Reconciliation Marker         bright_pink
+    "tran_wk_bg": "#FFFFFF",        # white             Transaction Treeview - Weekday row BG
+    "tran_we_bg": "#DEE7DF",        # oldlace           Transaction Treeview - Weekend row BG
+    "dtot_bg": "#5D5D5D",           # dark_grey         Daily Totals row BG
+    "dtot_ol_bg": "#FADBFD",        # pink              Daily Totals row - Over Limit - BG
+    "tab_bg": "#FFFFFF",            # pale_grey         Not Selected Tab BG
+    "tab_act_bg": "#803624",        # dark_brown        Selected Tab BG
+    "act_but_bg": "#E0FFE0",        # pale_green        Active Button BG
+    "act_but_hi_bg": "#98FB98",     # pale_green2       Active Button - Highlighted - BG
+    "last_stat_bg": "#E0E0E0",      # grey              Last Statement Balance field BG
+    "title1_bg": "#5D5D5D",         # Lup_LupT_ID=2, Lup_Seq=17, Title/Header BG - AHB Header row
+    "title2_bg": "#E0E0E0",         # Lup_LupT_ID=2, Lup_Seq=18, Title/Header BG - Transaction Treeview Header row
+    "title3_bg": "#000000",         # Lup_LupT_ID=2, Lup_Seq=19, Title/Header BG
+    "exit_but_bg": "#ADD8E6",       # pale_blue         Exit/Close Buttons BG
+    "del_but_bg": "#DD0000",        # red               Delete Button BG
+    # Text colours
+    "complete_tx": "#000000",       # Lup_LupT_ID=3, Lup_Seq=3, Transaction Treeview text - Completed transactions
+    "pending_tx": "#0000FF",        # blue              Transaction Treeview text - Pending/Processing transactions
+    "forecast_tx": "#800000",       # maroon            Transaction Treeview text - Forecast transactions
+    "dtot_tx": "#FFFFFF",           # Lup_LupT_ID=3, Lup_Seq=6, Daily Totals row text
+    "dtot_ol_tx": "#DD0000",        # red2              Daily Totals row - Over Limit - text
+    "tab_tx": "#000000",            # Lup_LupT_ID=3, Lup_Seq=8, Not Selected Tab text
+    "tab_act_tx": "#FFFFFF",        # Lup_LupT_ID=3, Lup_Seq=9, Selected Tab text
+    "act_but_tx": "#000000",        # Lup_LupT_ID=3, Lup_Seq=10, Active Button text
+    "act_but_hi_tx": "#000000",     # Lup_LupT_ID=3, Lup_Seq=11, Active Button - Highlighted - text
+    "last_stat_tx": "#000000",      # Lup_LupT_ID=3, Lup_Seq=12, Last Statement Balance field text
+    "title1_tx": "#FFFFFF",         # Lup_LupT_ID=3, Lup_Seq=13, Title/Header text
+    "title2_tx": "#000000",         # Lup_LupT_ID=3, Lup_Seq=14, Title/Header text
+    "title3_tx": "#FFFFFF",         # Lup_LupT_ID=3, Lup_Seq=15, Title/Header text
+    "exit_but_tx": "#000000",       # Lup_LupT_ID=3, Lup_Seq=16, Exit/Close Buttons text
+    "del_but_tx": "#000000",        # Lup_LupT_ID=3, Lup_Seq=17, Delete Button text
+    # Legacy keys - to be kept as not user configurable
+    "white": "#FFFFFF",
+    "black": "#000000",
+    # Legacy keys (kept during migration)
+    "oldlace": "#DEE7DF",
+    "yellow": "#FFFF80",
+    "green": "#80FF80",
+    "cyan": "#B9FFFF",
+    "marker": "#ED87ED",
+    "pale_blue": "#ADD8E6",
+    "very_pale_blue": "#DFFFFF",
+    "very_pale_pink": "#F0D0D0",
+    "red": "#DD0000",
+    "dark_grey": "#5D5D5D",
+    "pink": "#FADBFD",
+    "dark_brown": "#803624",
+    "orange": "#FFC993",
+    "grey": "#E0E0E0",
+    "pale_green": "#E0FFE0",
+    "pale_grey": "#F0F0F0",
+    "blue": "#0000FF",
+    "maroon": "#800000",
+    "red2": "#FF0000",
+    "darkgray": "#707070",
+    "pink2": "#FFE0EB",
+    "darkbrown2": "#802020",
+    "seashell": "#F0F8F8",
+    "yellow2": "#FFFF00",
+    "pale_green2": "#98FB98",
+    "cyan2": "#A6FFFF",
+    "bright_orange": "#FFC993",
+    "bright_pink": "#ED87ED",
+    "oldlace2": "#F2EDE0"
 }
 
-# Set up logging
-log_levels = {
-    'debug': logging.DEBUG,
-    'info': logging.INFO,
-    'warning': logging.WARNING,
-    'error': logging.ERROR
+# Legacy color mappings (reference for migration, not used at runtime)
+LEGACY_COLOR_MAP = {
+    "white": "tran_wk_bg",
+    "oldlace": "tran_we_bg",
+    "yellow": "flag_y_bg",
+    "green": "flag_g_bg",
+    "cyan": "flag_b_bg",
+    "marker": "flag_mk_bg",
+    "pale_blue": "exit_but_bg",
+    "very_pale_blue": "home_bg",
+    "very_pale_pink": "home_test_bg",
+    "red": "del_but_bg",
+    "dark_grey": "dtot_bg",
+    "pink": "dtot_ol_bg",
+    "black": "normal_tx",
+    "dark_brown": "tab_act_bg",
+    "orange": "flag_dd_bg",
+    "grey": "last_stat_bg",
+    "pale_green": "act_but_bg",
+    "pale_grey": "tab_bg",
+    "blue": "pending_tx",
+    "maroon": "forecast_tx",
+    "red2": "dtot_ol_tx",
+    "darkgray": "disabled_tx",
+    "pink2": "dtot_ol_bg",
+    "darkbrown2": "tab_act_bg",
+    "seashell": "home_bg",
+    "yellow2": "flag_y_bg",
+    "pale_green2": "act_but_hi_bg",
+    "cyan2": "flag_b_bg",
+    "bright_orange": "flag_dd_bg",
+    "bright_pink": "flag_mk_bg",
+    "oldlace2": "tran_we_bg"
 }
+
+#TEXT_COLORS = {
+#    "Unknown": "gray",                              # "disabled_tx"
+#    "Forecast": "#800040",          # Brown       #"forecast_tx"
+#    "Processing": "#0000FF",        # Blue        #"pending_tx"
+#    "Complete": "#000000"           # Black       #"complete_tx"
+#}
+
+def load_colors_from_db(db_path):
+    """
+    Load colors from Lookups table and update COLORS dictionary, falling back to DEFAULT_COLORS if records are missing.
+    
+    Args:
+        db_path (str): Path to SQLite database
+    """
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Expected counts
+        expected_counts = {2: 21, 3: 17}  # Lup_LupT_ID: expected Lup_Seq count
+        color_map = {
+            (2, 1): "home_bg",
+            (2, 2): "home_test_bg",
+            (2, 3): "flag_y_bg",
+            (2, 4): "flag_g_bg",
+            (2, 5): "flag_b_bg",
+            (2, 6): "flag_dd_bg",
+            (2, 7): "flag_mk_bg",
+            (2, 8): "tran_wk_bg",
+            (2, 9): "tran_we_bg",
+            (2, 10): "dtot_bg",
+            (2, 11): "dtot_ol_bg",
+            (2, 12): "tab_bg",
+            (2, 13): "tab_act_bg",
+            (2, 14): "act_but_bg",
+            (2, 15): "act_but_hi_bg",
+            (2, 16): "last_stat_bg",
+            (2, 17): "title1_bg",
+            (2, 18): "title2_bg",
+            (2, 19): "title3_bg",
+            (2, 20): "exit_but_bg",
+            (2, 21): "del_but_bg",
+            (3, 1): "normal_tx",
+            (3, 2): "disabled_tx",
+            (3, 3): "complete_tx",
+            (3, 4): "pending_tx",
+            (3, 5): "forecast_tx",
+            (3, 6): "dtot_tx",
+            (3, 7): "dtot_ol_tx",
+            (3, 8): "tab_tx",
+            (3, 9): "tab_act_tx",
+            (3, 10): "act_but_tx",
+            (3, 11): "act_but_hi_tx",
+            (3, 12): "last_stat_tx",
+            (3, 13): "title1_tx",
+            (3, 14): "title2_tx",
+            (3, 15): "title3_tx",
+            (3, 16): "exit_but_tx",
+            (3, 17): "del_but_tx"
+        }
+
+        for lup_type_id in (2, 3):
+            cursor.execute("SELECT Lup_Seq, Lup_Desc FROM Lookups WHERE Lup_LupT_ID = ? ORDER BY Lup_Seq", (lup_type_id,))
+            records = cursor.fetchall()
+            found_seqs = {seq for seq, _ in records}
+            expected_seqs = set(range(1, expected_counts[lup_type_id] + 1))
+            missing_seqs = expected_seqs - found_seqs
+            if missing_seqs:
+                logger.warning(f"Missing Lookups records for Lup_LupT_ID={lup_type_id}, Lup_Seq={missing_seqs}")
+
+            for lup_seq, lup_desc in records:
+                key = color_map.get((lup_type_id, lup_seq))
+                if key:
+                    # Normalize color format: convert 0xRRGGBB to #RRGGBB
+                    color = lup_desc.replace("0x", "#") if lup_desc.startswith("0x") else lup_desc
+                    COLORS[key] = color
+                    #logger.debug(f"Updated COLORS[{key}] = {color}")
+                else:
+                    logger.warning(f"No mapping for Lup_LupT_ID={lup_type_id}, Lup_Seq={lup_seq}")
+
+            # Fallback to DEFAULT_COLORS for missing records
+            for lup_seq in missing_seqs:
+                key = color_map.get((lup_type_id, lup_seq))
+                if key:
+                    COLORS[key] = DEFAULT_COLORS[key]
+                    # Update legacy key if it exists
+                    legacy_keys = [k for k, v in LEGACY_COLOR_MAP.items() if v == key]
+                    for legacy_key in legacy_keys:
+                        COLORS[legacy_key] = DEFAULT_COLORS[key]
+                        logger.debug(f"Fallback to DEFAULT_COLORS[{legacy_key}] = {DEFAULT_COLORS[key]}")
+                    logger.debug(f"Fallback to DEFAULT_COLORS[{key}] = {DEFAULT_COLORS[key]}")
+
+        conn.close()
+    except Exception as e:
+        logger.error(f"Failed to load colors from database: {e}")
+        COLORS.update(DEFAULT_COLORS)  # Fallback to defaults
+        logger.debug("Reverted to DEFAULT_COLORS")
 
 def load_db_settings():
-    global master_bg, COLORS
+    global master_bg, COLORS, scaling_factor
 
     # Set up logging
     logger = logging.getLogger('HA.db_setup')
@@ -75,13 +318,10 @@ def load_db_settings():
     # Get correct DB and set master_bg colour
     if CONFIG['APP_ENV'] == 'test':
         dbpath = get_config('DB_PATH_TEST')
-        master_bg=COLORS["very_pale_pink"]
     else:
         dbpath = get_config('DB_PATH')
-        master_bg=COLORS["very_pale_blue"]
         
     logger.debug(f"Opening database: {dbpath}")
-    #logger.debug(f"master_bg: {master_bg}")
 
     """Load settings from the database."""
     try:
@@ -98,7 +338,16 @@ def load_db_settings():
                     logger.error(f"Invalid value for {key}: {value}")
     except sqlite3.Error as e:
         logger.error(f"Failed to load settings from database: {e}")
-
+        
+    """Load master background colour setting from the database."""
+    if CONFIG['APP_ENV'] == 'test':
+        cursor.execute("SELECT Lup_Desc FROM Lookups WHERE Lup_LupT_ID=2 AND Lup_Seq=2")
+        master_bg = cursor.fetchone()
+    else:
+        cursor.execute("SELECT Lup_Desc FROM Lookups WHERE Lup_LupT_ID=2 AND Lup_Seq=1")
+        master_bg = cursor.fetchone()
+    logger.debug(f"master_bg: {master_bg}")
+    
 def setup_logging():
     """Configure logging with file and optional console handlers."""
     logger = logging.getLogger('HA')

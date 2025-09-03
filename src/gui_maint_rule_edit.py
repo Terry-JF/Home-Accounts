@@ -8,7 +8,7 @@ import traceback
 import re
 from db import (fetch_rule_group_names, fetch_trigger_options, fetch_action_options, fetch_account_c_names,
                 fetch_account_names, fetch_subcategories, fetch_all_categories, fetch_trigger_option, fetch_action_option)
-from ui_utils import (VerticalScrolledFrame, resource_path, open_form_with_position, close_form_with_position, open_calendar, center_window, timed_message)
+from ui_utils import (VerticalScrolledFrame, resource_path, open_form_with_position, close_form_with_position, open_calendar, center_window, timed_message, sc)
 
 # Set up logging
 logger = logging.getLogger('HA.maint_rule_edit')

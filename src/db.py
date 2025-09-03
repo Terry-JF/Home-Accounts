@@ -178,10 +178,32 @@ def fetch_years(cursor):
     return [row[0] for row in cursor.fetchall()]
 
 def fetch_lookup_values(cursor, lup_type_id):
-    cursor.execute("SELECT Lup_Desc FROM Lookups WHERE Lup_LupT_ID = ? ORDER BY Lup_Seq", (lup_type_id,))
-    return [row[0] for row in cursor.fetchall()]
+    cursor.execute("SELECT Lup_Seq, Lup_Desc FROM Lookups WHERE Lup_LupT_ID = ? ORDER BY Lup_Seq", (lup_type_id,))
+    return [row for row in cursor.fetchall()]
 
-
+def update_lookup_color(cursor, conn, lup_seq, lup_type_id, color):
+    """
+    Update the color value in the Lookups table for a specific Lup_ID and Lup_LupT_ID.
+    
+    Args:
+        cursor: SQLite cursor object
+        conn: SQLite connection object
+        lup_id (int): Lookup ID
+        lup_type_id (int): Lookup type ID (2 for text, 3 for background)
+        color (str): Hex color code (e.g., '#FFFFFF')
+    """
+    try:
+        cursor.execute("SELECT Lup_ID FROM Lookups WHERE Lup_LupT_ID = ? AND Lup_Seq = ?", (lup_type_id, lup_seq))
+        result = cursor.fetchone()
+        if result:
+            lup_id = result[0]
+            cursor.execute("UPDATE Lookups SET Lup_Desc = ? WHERE Lup_ID = ? AND Lup_LupT_ID = ?", (color, lup_id, lup_type_id))
+            logger.debug(f"Updated color for Lup_ID={lup_id}, Lup_LupT_ID={lup_type_id}, Lup_Seq={lup_seq} to {color}")
+        else:
+            logger.warning(f"No record found to update for Lup_LupT_ID={lup_type_id}, Lup_Seq={lup_seq}")
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Error updating color for Lup_LupT_ID={lup_type_id}, Lup_Seq={lup_seq}: {e}")
 ################### Category (IE_Cata) Table (Remember to use Year in queries)
 
 # Fetch Parent Categories

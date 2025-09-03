@@ -6,6 +6,8 @@ import tkinter as tk
 from tkcalendar import Calendar
 import os
 from db import (get_window_position, save_window_position)
+from config import COLORS
+import config
 
 # Set up logging
 logger = logging.getLogger('HA.ui_utils')
@@ -190,14 +192,13 @@ def open_calendar(form, value_entry):
     top = tk.Toplevel(form)
     top.transient(form)
     top.grab_set()
-    scaling_factor = top.winfo_fpixels('1i') / 96  # Get scaling factor (e.g., 2.0 for 200% scaling)
-    center_window(top, int(200 * scaling_factor), int(200 * scaling_factor))
+    center_window(top, sc(200), sc(200))
     cal = Calendar(top, date_pattern="dd/mm/yyyy")
     cal.pack(padx=10, pady=10)
     tk.Button(top, text="Select", command=set_date).pack(pady=5)
 
 # Center any Window on screen
-def center_window(window, width, height):                               #                           7
+def center_window(window, width, height):                               #   
     window.update_idletasks()  # Ensure window size is updated
     screen_width = window.winfo_screenwidth()
     screen_height = window.winfo_screenheight()
@@ -222,12 +223,11 @@ def timed_message(parent, title, message, timer_ms):
     popup.title(title)
     popup.transient(parent)  # Keep popup on top of parent
     popup.grab_set()  # Make popup modal
-    popup.configure(bg="lightgray")
+    popup.configure(bg=config.master_bg)
 
     # Adjust size based on screen scaling
-    scaling_factor = parent.winfo_fpixels('1i') / 96
-    popup_width = int(200 * scaling_factor)
-    popup_height = int(100 * scaling_factor)
+    popup_width = sc(200)
+    popup_height = sc(100)
 
     # Center the popup relative to parent
     parent_x = parent.winfo_x()
@@ -239,23 +239,11 @@ def timed_message(parent, title, message, timer_ms):
     popup.geometry(f"{popup_width}x{popup_height}+{x}+{y}")
 
     # Add message label
-    tk.Label(
-        popup,
-        text=message,
-        font=("Arial", 10),
-        wraplength=int(180 * scaling_factor),
-        bg="lightgray"
-    ).pack(pady=int(10 * scaling_factor), padx=int(10 * scaling_factor))
+    tk.Label(popup, text=message, font=(config.ha_normal), wraplength=sc(180), bg=config.master_bg).pack(pady=sc(10), padx=sc(10))
 
     # Add Close button
-    button = tk.Button(
-        popup,
-        text="Close",
-        font=("Arial", 10),
-        width=10,
-        command=lambda: close_popup(popup)
-    )
-    button.pack(pady=int(10 * scaling_factor))
+    button = tk.Button(popup, text="Close", font=(config.ha_normal), bg=COLORS["exit_but_bg"], width=10, command=lambda: close_popup(popup))
+    button.pack(pady=sc(10))
 
     # Schedule auto-close
     timer_id = popup.after(timer_ms, lambda: close_popup(popup))
@@ -270,6 +258,28 @@ def timed_message(parent, title, message, timer_ms):
     button.focus_set()
     popup.protocol("WM_DELETE_WINDOW", lambda: close_popup(popup))  # Handle window close button
     popup.wait_window()  # Wait for window to close before returning
+
+# Set Scaling Factor
+class Scaler:
+    _scaling_factor = 1.0  # Default scaling factor
+
+    @classmethod
+    def set_scaling_factor(cls, root):
+        cls._scaling_factor = root.winfo_fpixels('1i') / 96
+        logger.debug(f"Set scaling_factor to {cls._scaling_factor}")
+
+    @classmethod
+    def scale(cls, pixels):
+        if not isinstance(cls._scaling_factor, (int, float)):
+            logger.warning("scaling_factor not set, using default 1.0")
+            cls._scaling_factor = 1.0
+        return int(pixels * cls._scaling_factor)
+
+set_sc = Scaler.set_scaling_factor
+sc = Scaler.scale
+
+
+    
     
     
     

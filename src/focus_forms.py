@@ -4,8 +4,8 @@ from tkinter import ttk, messagebox
 from datetime import datetime
 import logging
 from db import  (fetch_years, fetch_categories, fetch_subcategories, fetch_actuals)
-from ui_utils import (open_form_with_position, close_form_with_position)
-from config import COLORS, TEXT_COLORS
+from ui_utils import (open_form_with_position, close_form_with_position, sc)
+from config import COLORS
 import config
 
 # Set up logging
@@ -185,9 +185,9 @@ def create_summary_form(parent, conn, cursor):                          # Win_ID
         
         dd_tree.tag_configure("total", background=config.master_bg, font=("Arial", 10))
         dd_tree.tag_configure("marked", background="#FFC993")
-        dd_tree.tag_configure("forecast", foreground=TEXT_COLORS["Forecast"], font=("Arial", 10))
-        dd_tree.tag_configure("processing", foreground=TEXT_COLORS["Processing"], font=("Arial", 10))
-        dd_tree.tag_configure("complete", foreground=TEXT_COLORS["Complete"], font=("Arial", 10))
+        dd_tree.tag_configure("forecast", foreground=COLORS["forecast_tx"], font=("Arial", 10))
+        dd_tree.tag_configure("processing", foreground=COLORS["pending_tx"], font=("Arial", 10))
+        dd_tree.tag_configure("complete", foreground=COLORS["complete_tx"], font=("Arial", 10))
 
         dd_widths = [50, 60, 215, 95]
         for col, width in zip(dd_columns, dd_widths):

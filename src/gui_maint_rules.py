@@ -8,7 +8,7 @@ import logging
 import traceback
 import sqlite3
 from db import (fetch_trigger_option, fetch_action_option, create_rule_group, fetch_account_full_name, fetch_category_name, fetch_subcategory_name)
-from ui_utils import (VerticalScrolledFrame, resource_path, open_form_with_position, close_form_with_position)
+from ui_utils import (VerticalScrolledFrame, resource_path, open_form_with_position, close_form_with_position, sc)
 from gui_maint_rule_edit import edit_rule_form
 
 # Set up logging

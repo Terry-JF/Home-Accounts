@@ -5,11 +5,11 @@ from datetime import datetime
 from tkcalendar import Calendar
 import logging
 import ast
-from config import COLORS, TEXT_COLORS
+from config import COLORS
 from db import  (fetch_years, fetch_subcategories, fetch_regular_for_year, fetch_category_name, fetch_subcategory_name, fetch_account_full_name,
                 delete_transaction, fetch_regular_by_id, fetch_account_full_names, fetch_inc_categories, fetch_exp_categories, fetch_category_id,
                 fetch_subcategory_id, fetch_account_id_by_name)
-from ui_utils import (open_form_with_position, close_form_with_position)
+from ui_utils import (open_form_with_position, close_form_with_position, sc)
 import config
 
 # Set up logging
@@ -343,7 +343,7 @@ def create_regular_transaction_form(parent, form, conn, cursor, curr_rec_id=0, i
     flag_btn.place(x=int(1250 * scaling_factor), y=int(50 * scaling_factor), width=int(100 * scaling_factor), height=int(35 * scaling_factor))
     if not is_new and reg_rec["Reg_Query_Flag"]:
         flag_var.set(True)
-        flag_btn.config(text="Flag ON", bg=COLORS["yellow"])
+        flag_btn.config(text="Flag ON", bg=COLORS["flag_y_bg"])
     else:
         flag_var.set(False)
         flag_btn.config(text="Flag OFF", bg=COLORS["grey"])
@@ -359,7 +359,7 @@ def create_regular_transaction_form(parent, form, conn, cursor, curr_rec_id=0, i
             flag_btn.config(text="Flag OFF", bg=COLORS["grey"])
         else:
             flag_var.set(True)
-            flag_btn.config(text="Flag ON", bg=COLORS["yellow"])
+            flag_btn.config(text="Flag ON", bg=COLORS["flag_y_bg"])
 
 
 

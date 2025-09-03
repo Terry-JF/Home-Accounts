@@ -13,7 +13,7 @@ import os
 import logging
 from datetime import datetime, timedelta
 from uuid import uuid4
-from ui_utils import (resource_path, open_form_with_position, close_form_with_position, center_window)
+from ui_utils import (resource_path, open_form_with_position, close_form_with_position, center_window, sc)
 from rules_engine import (process_transactions, test_rules)
 from config import CONFIG, COLORS, get_config
 import config
