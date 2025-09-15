@@ -5,9 +5,10 @@ from tkinter import ttk, messagebox
 from tkcalendar import Calendar
 from datetime import datetime
 import logging
+import traceback
 from config import COLORS
 from db import (insert_transaction, update_transaction, delete_transaction, fetch_notes, fetch_categories, fetch_subcategories,
-                fetch_account_full_names, fetch_statement_balances, update_account_month_transaction_total)
+                fetch_account_full_names, fetch_statement_balances, update_account_month_transaction_total, fetch_transaction)
 from ui_utils import (refresh_grid, open_form_with_position, close_form_with_position, sc)
 from gui_maint import (create_account_maint_form, create_category_maint_form, create_export_transactions_form,
                     create_colour_scheme_maint_form, create_account_years_maint_form, create_annual_budget_maint_form, 
@@ -27,9 +28,17 @@ try:
 except Exception as e:
     logger.warning(f"Failed to set DPI awareness: {e}")
 
-def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, conn=None, cursor=None, month=None, year=None, local_accounts=None, account_data=None):
+def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, conn=None, cursor=None, month=None, year=None, local_accounts=None, 
+                    account_data=None, single_acc=False, default_acc_id=None, home_root=None):
     if conn is None or cursor is None or month is None or year is None or local_accounts is None or account_data is None:
         raise ValueError("Database connection, month/year, and account data required")
+    if not account_data or not isinstance(account_data, list) or not account_data[0]:
+        raise ValueError("Invalid account_data structure")
+    
+    # Extract acc_id from account_data
+    acc_id = account_data[0][0]
+    logger.debug(f"create_edit_form: acc_id={acc_id}, single_acc={single_acc}, default_acc_id={default_acc_id}")
+
     current_time = datetime.now()
     day = current_time.day
         
@@ -42,6 +51,7 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
         
     form.geometry(f"{sc(850)}x{sc(500)}")  # Adjust size
     form.resizable(False, False)
+    form.configure(bg=config.master_bg)
     form.grab_set()
     
     ############################################################################
@@ -61,6 +71,14 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
     image_refs.extend([unchecked_img, checked_img, radio_unchecked_img, radio_checked_img])
     ############################################################################
     
+    # Forward declarations to avoid undefined errors
+    def set_trans_type(*args, **kwargs):
+        pass
+    def set_status(*args, **kwargs):
+        pass
+    def update_fields(*args):
+        pass
+    
     # Define before using Ignore checkbox control to avoid scope error
     def toggle_ignore():
         if ignore_checkbox_var.get() == 1:  # Checkbox is ticked
@@ -73,50 +91,43 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
             
     # Define all widgets first to ensure they are in scope for functions
     # Left Side
-    tk.Label(form, text="Transaction Date:", font=(config.ha_normal), 
-            padx=sc(5), pady=sc(2)).place(x=sc(90), y=sc(20))
+    tk.Label(form, text="Transaction Date:", font=(config.ha_normal), bg=config.master_bg, padx=sc(5), pady=sc(2)).place(x=sc(90), y=sc(20))
     cal = Calendar(form, selectmode="day", year=year, month=month, day=day)
     cal.place(x=sc(40), y=sc(50))
 
     # Transaction Type Control
-    tt_frame = tk.Frame(form, relief="solid", borderwidth=1, height=sc(100), width=sc(270))
+    tt_frame = tk.Frame(form, relief="solid", borderwidth=1, height=sc(100), width=sc(270), bg=config.master_bg)
     tt_frame.place(x=sc(40), y=sc(220))
     
-    tk.Label(tt_frame, text="Transaction Type:", font=(config.ha_normal), width=14, anchor=tk.E, 
+    tk.Label(tt_frame, text="Transaction Type:", font=(config.ha_normal), width=14, bg=config.master_bg, anchor=tk.E, 
             fg=COLORS["black"]).place(x=sc(20), y=sc(40))
     radio_var = tk.StringVar(value="Expense")
     # Store transaction type buttons and their values
     trans_type_buttons = []
     
     # Income button
-    tk.Label(tt_frame, text="Income", anchor=tk.W, width=10,
-            font=(config.ha_normal), fg=COLORS["black"]).place(
-            x=sc(180), y=sc(20))
+    tk.Label(tt_frame, text="Income", anchor=tk.W, width=10, bg=config.master_bg, font=(config.ha_normal), fg=COLORS["black"]).place(x=sc(180), y=sc(20))
     ttype_box1 = tk.Button(tt_frame, image=radio_unchecked_img, bd=0)
     ttype_box1.place(x=sc(150), y=sc(20))
     trans_type_buttons.append((ttype_box1, 1))
 
     # Expense button
-    tk.Label(tt_frame, text="Expense", anchor=tk.W, width=10,
-            font=(config.ha_normal), fg=COLORS["black"]).place(
-            x=sc(180), y=sc(40))
+    tk.Label(tt_frame, text="Expense", anchor=tk.W, width=10, bg=config.master_bg, font=(config.ha_normal), fg=COLORS["black"]).place(x=sc(180), y=sc(40))
     ttype_box2 = tk.Button(tt_frame, image=radio_unchecked_img, bd=0)
     ttype_box2.place(x=sc(150), y=sc(40))
     trans_type_buttons.append((ttype_box2, 2))
 
     # Transfer button
-    tk.Label(tt_frame, text="Transfer", anchor=tk.W, width=10,
-            font=(config.ha_normal), fg=COLORS["black"]).place(
-            x=sc(180), y=sc(60))
+    tk.Label(tt_frame, text="Transfer", anchor=tk.W, width=10, bg=config.master_bg, font=(config.ha_normal), fg=COLORS["black"]).place(x=sc(180), y=sc(60))
     ttype_box3 = tk.Button(tt_frame, image=radio_unchecked_img, bd=0)
     ttype_box3.place(x=sc(150), y=sc(60))
     trans_type_buttons.append((ttype_box3, 3))
 
     # Status Control
-    ts_frame = tk.Frame(form, relief="solid", borderwidth=1, height=sc(100), width=sc(270))
+    ts_frame = tk.Frame(form, relief="solid", borderwidth=1, height=sc(100), width=sc(270), bg=config.master_bg)
     ts_frame.place(x=sc(40), y=sc(340))
     
-    tk.Label(ts_frame, text="Status:", font=(config.ha_normal), width=14, anchor=tk.E,
+    tk.Label(ts_frame, text="Status:", font=(config.ha_normal), width=14, bg=config.master_bg, anchor=tk.E,
             fg=COLORS["black"]).place(x=sc(20), y=sc(40))
     status_var = tk.StringVar(value="Forecast")
     
@@ -124,31 +135,25 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
     status_buttons = []
     
     # Complete button
-    tk.Label(ts_frame, text="Complete", anchor=tk.W, width=10, 
-            font=(config.ha_normal), fg=COLORS["black"]).place(
-            x=sc(180), y=sc(20))
+    tk.Label(ts_frame, text="Complete", anchor=tk.W, width=10, bg=config.master_bg, font=(config.ha_normal), fg=COLORS["black"]).place(x=sc(180), y=sc(20))
     status_box1 = tk.Button(ts_frame, image=radio_unchecked_img, bd=0)
     status_box1.place(x=sc(150), y=sc(20))
     status_buttons.append((status_box1, 3))
     
     # Processing button
-    tk.Label(ts_frame, text="Processing", anchor=tk.W, width=10, 
-            font=(config.ha_normal), fg=COLORS["black"]).place(
-            x=sc(180), y=sc(40))
+    tk.Label(ts_frame, text="Processing", anchor=tk.W, width=10, bg=config.master_bg, font=(config.ha_normal), fg=COLORS["black"]).place(x=sc(180), y=sc(40))
     status_box2 = tk.Button(ts_frame, image=radio_unchecked_img, bd=0)
     status_box2.place(x=sc(150), y=sc(40))
     status_buttons.append((status_box2, 2))
     
     # Forecast button
-    tk.Label(ts_frame, text="Forecast", anchor=tk.W, width=10, 
-            font=(config.ha_normal), fg=COLORS["black"]).place(
-            x=sc(180), y=sc(60))
+    tk.Label(ts_frame, text="Forecast", anchor=tk.W, width=10, bg=config.master_bg, font=(config.ha_normal), fg=COLORS["black"]).place(x=sc(180), y=sc(60))
     status_box3 = tk.Button(ts_frame, image=radio_unchecked_img, bd=0)
     status_box3.place(x=sc(150), y=sc(60))
     status_buttons.append((status_box3, 1))
 
     # Right Side
-    flag_btn_frame = tk.LabelFrame(form, text="Set/Clear Flag:", font=(config.ha_normal), 
+    flag_btn_frame = tk.LabelFrame(form, text="Set/Clear Flag:", font=(config.ha_normal), bg=config.master_bg, 
                                 padx=sc(10), pady=sc(20))
     flag_btn_frame.place(x=sc(400), y=sc(20))
     tk.Button(flag_btn_frame, text="Set", font=(config.ha_normal), width=6, bg=COLORS["flag_y_bg"], 
@@ -157,75 +162,78 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
             command=lambda: set_flag_edit(2)).pack(side="left", padx=sc(10))
     tk.Button(flag_btn_frame, text="Set", font=(config.ha_normal), width=6, bg=COLORS["flag_b_bg"], 
             command=lambda: set_flag_edit(4)).pack(side="left", padx=sc(10))
-
-    tk.Label(form, text="Amount:   £", font=(config.ha_normal)).place(
-        x=sc(400), y=sc(130))
+    
+    amount_lbl = tk.Label(form, text="Amount:   £", width=15, bg=config.master_bg, anchor=tk.E, font=(config.ha_normal))
+    amount_lbl.place(x=sc(400), y=sc(130))
     amount_entry = tk.Entry(form, width=12, font=(config.ha_normal), justify="left")
     amount_entry.place(x=sc(530), y=sc(130))
 
-    cc_pay_btn = tk.Button(form, text="", anchor="w", font=(config.ha_normal), state="disabled", bg=COLORS["pale_green"])
+    cc_pay_btn = tk.Button(form, text="", anchor="w", font=(config.ha_normal), state="disabled", bg=config.master_bg)
     cc_pay_btn.place(x=sc(650), y=sc(125), width=sc(150))
 
-    tk.Label(form, text="Description:", font=(config.ha_normal)).place(
-        x=sc(400), y=sc(170))
+    desc_lbl = tk.Label(form, text="Description:", width=13, bg=config.master_bg, anchor=tk.E, font=(config.ha_normal))
+    desc_lbl.place(x=sc(400), y=sc(170))
     desc_entry = tk.Entry(form, width=36, font=(config.ha_normal), justify="left")
     desc_entry.place(x=sc(530), y=sc(170))
 
     # Fetch full account names for the selected year
-    full_accounts = fetch_account_full_names(cursor, year)
-    source_label = tk.Label(form, text="Source Account:", font=(config.ha_normal))
+    full_accounts = [local_accounts[0]] if single_acc else fetch_account_full_names(cursor, year)
+    # Default to first account or account matching default_acc_id for new transactions
+    default_acc_name = local_accounts[0]
+    if default_acc_id and not single_acc:
+        # Find account name matching default_acc_id
+        cursor.execute("SELECT Acc_Short_Name FROM Account WHERE Acc_ID = ? AND Acc_Year = ?", (default_acc_id, year))
+        result = cursor.fetchone()
+        default_acc_name = result[0] if result else full_accounts[0]
+    source_label = tk.Label(form, text="Source Account:", width=13, bg=config.master_bg, anchor=tk.E, font=(config.ha_normal))
     source_label.place(x=sc(400), y=sc(210))
-    source_var = tk.StringVar(value=full_accounts[0] if full_accounts else "Cash")
+    source_var = tk.StringVar(value=default_acc_name if selected_row is None else full_accounts[0])
     source_menu = ttk.Combobox(form, state="readonly", textvariable=source_var, values=full_accounts, font=(config.ha_normal))
-    source_menu.place(x=sc(530), y=sc(205), 
-                    width=sc(180), height=sc(30))
-    source_menu.set(full_accounts[0] if full_accounts else "Cash")    
+    source_menu.place(x=sc(530), y=sc(205), width=sc(180), height=sc(30))
+    source_menu.set(default_acc_name if selected_row is None else full_accounts[0])    
 
-    dest_label = tk.Label(form, text="Destination Account:", font=(config.ha_normal))
-    dest_label.place(x=sc(400), y=sc(250))
-    dest_var = tk.StringVar(value=full_accounts[0] if full_accounts else "Cash")
+    dest_label = tk.Label(form, text="Destination Account:", width=16, bg=config.master_bg, anchor=tk.E, font=(config.ha_normal))
+    dest_label.place(x=sc(378), y=sc(250))
+    dest_var = tk.StringVar(value=full_accounts[0])
     dest_menu = ttk.Combobox(form, textvariable=dest_var, values=full_accounts, state="readonly", font=(config.ha_normal))
-    dest_menu.place(x=sc(530), y=sc(245), 
-                    width=sc(180), height=sc(30))
-    dest_menu.set(full_accounts[0] if full_accounts else "Cash")    
+    dest_menu.place(x=sc(530), y=sc(245), width=sc(180), height=sc(30))
+    dest_menu.set(full_accounts[0])    
 
-    cat_label = tk.Label(form, text="Category:", font=(config.ha_normal))
+    cat_label = tk.Label(form, text="Category:", width=13, bg=config.master_bg, anchor=tk.E, font=(config.ha_normal))
     cat_label.place(x=sc(400), y=sc(290))
     cat_var = tk.StringVar(value="")
     categories = fetch_categories(cursor, year, is_income=False)
     cat_options = {row[1]: row[0] for row in categories}
     cat_menu = ttk.Combobox(form, textvariable=cat_var, values=list(cat_options.keys()), state="readonly", font=(config.ha_normal))
-    cat_menu.place(x=sc(530), y=sc(285), 
-                width=sc(180), height=sc(30))
+    cat_menu.place(x=sc(530), y=sc(285), width=sc(180), height=sc(30))
 
     # Display Ignore Control and Initialise
-    ignore_label = tk.Label(form, text="Ignore", anchor=tk.W, width=10, font=(config.ha_button))
+    ignore_label = tk.Label(form, text="Ignore", anchor=tk.W, width=10, bg=config.master_bg, font=(config.ha_button))
     ignore_label.place(x=sc(745), y=sc(290))
-    ignore_box = tk.Button(form, image=unchecked_img, command = lambda: toggle_ignore())
+    ignore_box = tk.Button(form, image=unchecked_img, bg=config.master_bg, command=lambda: toggle_ignore())
     ignore_box.place(x=sc(720), y=sc(290))
     
-    scat_label = tk.Label(form, text="Sub-Category:", font=(config.ha_normal))
+    scat_label = tk.Label(form, text="Sub-Category:", width=13, bg=config.master_bg, anchor=tk.E, font=(config.ha_normal))
     scat_label.place(x=sc(400), y=sc(330))
     scat_var = tk.StringVar(value="")
     scat_menu = ttk.Combobox(form, textvariable=scat_var, values=[], state="readonly", font=(config.ha_normal))
-    scat_menu.place(x=sc(530), y=sc(325), 
-                    width=sc(180), height=sc(30))
+    scat_menu.place(x=sc(530), y=sc(325), width=sc(180), height=sc(30))
 
-    tk.Label(form, text="Notes:", width=12, font=(config.ha_normal), anchor=tk.W).place(
-        x=sc(400), y=sc(370))
-    notes_label = tk.Label(form, text=fetch_notes(cursor), width=35, height=4, anchor=tk.W, justify="left")
+    tk.Label(form, text="Notes:", width=13, bg=config.master_bg, anchor=tk.E, font=(config.ha_normal)).place(x=sc(400), y=sc(370))
+    notes_label = tk.Label(form, text=fetch_notes(cursor), width=35, bg=config.master_bg, height=4, anchor=tk.W, justify="left")
     notes_label.place(x=sc(530), y=sc(370))
 
-    save_btn = tk.Button(form, text="Save Transaction", font=(config.ha_normal))
+    save_btn = tk.Button(form, text="Save Transaction", font=(config.ha_button))
     save_btn.place(x=sc(650), y=sc(450), width=sc(150))
     if selected_row is not None:
-        delete_btn = tk.Button(form, text="Delete Transaction", font=(config.ha_normal), 
-                            bg=COLORS["del_but_bg"])
+        history_btn = tk.Button(form, text="History", font=(config.ha_button))
+        history_btn.place(x=sc(680), y=sc(50), width=sc(120))
+        delete_btn = tk.Button(form, text="Delete Transaction", font=(config.ha_button), bg=COLORS["del_but_bg"], fg=COLORS["del_but_tx"])
         delete_btn.place(x=sc(50), y=sc(450), width=sc(150))
-        cancel_btn = tk.Button(form, text="Cancel", font=(config.ha_normal), bg=COLORS["exit_but_bg"])
+        cancel_btn = tk.Button(form, text="Cancel", font=(config.ha_button), bg=COLORS["exit_but_bg"], fg=COLORS["exit_but_tx"])
         cancel_btn.place(x=sc(375), y=sc(450), width=sc(100))
     else:
-        cancel_btn = tk.Button(form, text="Cancel", font=(config.ha_normal), bg=COLORS["exit_but_bg"])
+        cancel_btn = tk.Button(form, text="Cancel", font=(config.ha_button), bg=COLORS["exit_but_bg"], fg=COLORS["exit_but_tx"])
         cancel_btn.place(x=sc(375), y=sc(450), width=sc(100))
 
     # Define functions after widgets to ensure all widgets are in scope
@@ -234,10 +242,6 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
         current_colour = desc_entry.cget("bg")
         new_colour = flag_map_num.get(flag_new_value, "SystemWindow")
         desc_entry.configure(bg="SystemWindow" if current_colour == new_colour else new_colour)
-
-    # Forward declaration for update_fields to allow set_trans_type and set_status to reference it
-    def update_fields(*args):
-        pass
 
     def set_trans_type(ttype_flag, buttons, radio_var, checked_img, unchecked_img):
         """
@@ -296,30 +300,19 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
         Args:
             *args: Ignored trace callback arguments (name, index, mode)
         """
-        if ignore == "ignore" and ignore_checkbox_var.get() == 1:      # we came here from toggle_ignore() and Checkbox is ticked
+        if ignore == "ignore" and ignore_checkbox_var.get() == 1:  # Checkbox is ticked
             cat_menu.configure(state="disabled")
-            cat_label.configure(foreground="grey")
+            cat_label.configure(foreground=COLORS["disabled_tx"])
             scat_menu.configure(state="disabled")
-            scat_label.configure(foreground="grey")
+            scat_label.configure(foreground=COLORS["disabled_tx"])
             cat_var.set("Ignore")
             scat_var.set("")
-        #    else:
-        #        cat_menu.configure(state="readonly")
-        #        cat_label.configure(foreground="black")
-        #        categories = fetch_categories(cursor, year, is_income=True)
-        #        cat_options.clear()
-        #        cat_options.update({row[1]: row[0] for row in categories})
-        #        cat_menu.configure(values=list(cat_options.keys()))
-        #        cat_var.set("Income" if cat_options else "")
-                #logger.debug(f"Income categories: {list(cat_options.keys())}")
-        #        scat_menu.configure(state="readonly")
-        #        scat_label.configure(foreground="black")
         else:
             radio = radio_var.get()
             #logger.debug(f"Updating fields based on radio_var: {radio}")
             if radio == "Income":
-                source_menu.configure(state="disabled")
-                source_label.configure(foreground=COLORS["grey"])
+                source_menu.configure(state="disabled" if not single_acc else "readonly")
+                source_label.configure(foreground=COLORS["disabled_tx"])
                 dest_menu.configure(state="readonly")
                 dest_label.configure(foreground=COLORS["black"])
                 source_var.set("")
@@ -343,8 +336,8 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
             elif radio == "Expense":
                 source_menu.configure(state="readonly")
                 source_label.configure(foreground=COLORS["black"])
-                dest_menu.configure(state="disabled")
-                dest_label.configure(foreground=COLORS["grey"])
+                dest_menu.configure(state="disabled" if not single_acc else "readonly")
+                dest_label.configure(foreground=COLORS["disabled_tx"])
                 dest_var.set("")
                 cat_menu.configure(state="readonly")
                 cat_label.configure(foreground=COLORS["black"])
@@ -359,7 +352,7 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
                     scat_label.configure(foreground=COLORS["black"])
                 else:
                     scat_menu.configure(state="disabled")
-                    scat_label.configure(foreground=COLORS["grey"])
+                    scat_label.configure(foreground=COLORS["disabled_tx"])
                     scat_var.set("")
                 cc_pay_btn.config(text="", state="disabled")
                 cc_pay_btn.place_forget()
@@ -368,16 +361,15 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
                     toggle_ignore()
                 ignore_label.configure(foreground=COLORS["black"])
 
-
             else:  # Transfer
                 source_menu.configure(state="readonly")
                 source_label.configure(foreground=COLORS["black"])
                 dest_menu.configure(state="readonly")
                 dest_label.configure(foreground=COLORS["black"])
                 cat_menu.configure(state="disabled")
-                cat_label.configure(foreground=COLORS["grey"])
+                cat_label.configure(foreground=COLORS["disabled_tx"])
                 scat_menu.configure(state="disabled")
-                scat_label.configure(foreground=COLORS["grey"])
+                scat_label.configure(foreground=COLORS["disabled_tx"])
                 cat_var.set("")
                 scat_var.set("")
                 if selected_row is None and not desc_entry.get().strip():
@@ -393,19 +385,19 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
                         cc_pay_btn.config(text="<<   {:,.2f}".format(pay_amt), bg=COLORS["act_but_bg"], highlightbackground=COLORS["act_but_hi_bg"], state="active")
                         cc_pay_btn.place(x=sc(650), y=sc(125), width=sc(150))
                         cc_pay_btn.update()  # Force button redraw
-                        #logger.debug(f"cc_pay_btn shown: text='<<   {pay_amt:,.2f}', bg={COLORS['pale_green']}")
+                        #logger.debug(f"cc_pay_btn shown: text='<<   {pay_amt:,.2f}', bg={COLORS['act_but_bg']}")
                     else:
-                        cc_pay_btn.config(bg=COLORS["grey"], highlightbackground=COLORS["grey"], state="disabled")
+                        cc_pay_btn.config(bg=config.master_bg, highlightbackground=config.master_bg, state="disabled")
                         cc_pay_btn.place_forget()
-                        #logger.debug(f"cc_pay_btn hidden: bg={COLORS['pale_grey']}, state=disabled")
+                        #logger.debug(f"cc_pay_btn hidden: bg={config.master_bg}, state=disabled")
                 else:
-                    cc_pay_btn.config(bg=COLORS["grey"], highlightbackground=COLORS["grey"], state="disabled")
+                    cc_pay_btn.config(bg=config.master_bg, highlightbackground=config.master_bg, state="disabled")
                     cc_pay_btn.place_forget()
-                    #logger.debug(f"cc_pay_btn hidden: bg={COLORS['pale_grey']}, state=disabled")
+                    #logger.debug(f"cc_pay_btn hidden: bg={config.master_bg}, state=disabled")
                 ignore_box.config(image=unchecked_img)
-                ignore_box.configure(state="disabled", foreground=COLORS["grey"])
+                ignore_box.configure(state="disabled", foreground=COLORS["disabled_tx"])
                 ignore_checkbox_var.set(0)
-                ignore_label.configure(foreground=COLORS["grey"])
+                ignore_label.configure(foreground=COLORS["disabled_tx"])
         form.update_idletasks()  # Force redraw
 
     def fill_amount():
@@ -428,7 +420,7 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
             scat_menu.configure(values=[])
             scat_var.set("")
             scat_menu.configure(state="disabled")
-            scat_label.configure(foreground=COLORS["grey"])
+            scat_label.configure(foreground=COLORS["disabled_tx"])
         form.update_idletasks()  # Force redraw
 
     def update_paycc(*args):
@@ -439,18 +431,18 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
             pay_amt = stmt_balances[dest_idx - 1]
             if pay_amt is not None and pay_amt < 0:
                 pay_amt = 0 - pay_amt
-                cc_pay_btn.config(text="<<   {:,.2f}".format(pay_amt), bg=COLORS["pale_green"], highlightbackground=COLORS["pale_green"], state="active")
+                cc_pay_btn.config(text="<<   {:,.2f}".format(pay_amt), bg=COLORS["act_but_bg"], highlightbackground=COLORS["act_but_hi_bg"], state="active")
                 cc_pay_btn.place(x=sc(650), y=sc(125), width=sc(150))
                 cc_pay_btn.update()  # Force button redraw
-                #logger.debug(f"cc_pay_btn shown: text='<<   {pay_amt:,.2f}', bg={COLORS['pale_green']}")
+                #logger.debug(f"cc_pay_btn shown: text='<<   {pay_amt:,.2f}', bg={COLORS['act_but_bg']}")
             else:
-                cc_pay_btn.config(bg=COLORS["pale_grey"], highlightbackground=COLORS["pale_grey"], state="disabled")
+                cc_pay_btn.config(bg=config.master_bg, highlightbackground=config.master_bg, state="disabled")
                 cc_pay_btn.place_forget()
-                #logger.debug(f"cc_pay_btn hidden: bg={COLORS['pale_grey']}, state=disabled")
+                #logger.debug(f"cc_pay_btn hidden: bg={config.master_bg}, state=disabled")
         else:
-            cc_pay_btn.config(bg=COLORS["pale_grey"], highlightbackground=COLORS["pale_grey"], state="disabled")
+            cc_pay_btn.config(bg=config.master_bg, highlightbackground=config.master_bg, state="disabled")
             cc_pay_btn.place_forget()
-            #logger.debug(f"cc_pay_btn hidden: bg={COLORS['pale_grey']}, state=disabled")
+            #logger.debug(f"cc_pay_btn hidden: bg={config.master_bg}, state=disabled")
         form.update_idletasks()  # Force redraw
 
     def save_transaction():
@@ -513,25 +505,26 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
                 dest_idx = 0
             if selected_row is not None and tr_id is not None:
                 update_transaction(cursor, conn, tr_id, type_map[radio], day, month, year, status, flag, amount, desc, source_idx, dest_idx, cat_pid, subcat_cid)
-                focus_day = 0
             else:
                 tr_id = insert_transaction(cursor, conn, type_map[radio], day, month, year, status, flag, amount, desc, source_idx, dest_idx, cat_pid, subcat_cid)
-                focus_day = str(day)
             update_account_month_transaction_total(cursor, conn, month, year, local_accounts)
             form.destroy()
             parent.selected_row.set(-1)
             tree.selection_remove(tree.selection())
-            new_rows = fetch_month_rows(cursor, month, year, local_accounts, account_data)
-            rows[:] = new_rows
-            if hasattr(parent, 'year_var') and hasattr(parent, 'tree'):
-                current_year = int(parent.year_var.get())
-                current_month = parent.get_current_month()
-            if parent:  # Check if root is provided
-                parent.update_ahb(parent, current_month, current_year)
-            if focus_day == 0:
-                refresh_grid(tree, rows, parent.marked_rows, selected_row, 0)
+            # Refresh the appropriate Treeview based on parent context
+            if hasattr(parent, 'refresh_tree'):
+                logger.debug("Refreshing account list Treeview")
+                parent.refresh_tree()
             else:
-                refresh_grid(tree, rows, parent.marked_rows, 0, focus_day)
+                logger.debug("Refreshing home screen Treeview")
+                rows[:] = fetch_month_rows(cursor, month, year, local_accounts, account_data)
+                refresh_grid(tree, rows, getattr(parent, 'marked_rows', set()), focus_day=str(day))
+            # Update the home screen if home_root is provided
+            if home_root and hasattr(home_root, 'update_ahb') and hasattr(home_root, 'get_current_month') and hasattr(home_root, 'year_var'):
+                current_month = home_root.get_current_month()
+                current_year = int(home_root.year_var.get())
+                logger.debug(f"Updating home screen AHB for month={current_month}, year={current_year}")
+                home_root.update_ahb(home_root, current_month, current_year)
         except ValueError as e:
             logger.error(f"Validation failed: {e}")
             messagebox.showerror("Validation Error", str(e))
@@ -545,13 +538,63 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
         date_obj = cal.get_date()
         date = datetime.strptime(date_obj, "%m/%d/%y")
         day = date.day
-        focus_day = str(day)
         form.destroy()
         parent.selected_row.set(-1)
         tree.selection_remove(tree.selection())
-        new_rows = fetch_month_rows(cursor, month, year, local_accounts, account_data)
-        rows[:] = new_rows
-        refresh_grid(tree, rows, parent.marked_rows, focus_day=focus_day)
+        # Refresh the appropriate Treeview based on parent context
+        if hasattr(parent, 'refresh_tree'):
+            logger.debug("Refreshing account list Treeview")
+            parent.refresh_tree()
+        else:
+            logger.debug("Refreshing home screen Treeview")
+            rows[:] = fetch_month_rows(cursor, month, year, local_accounts, account_data)
+            refresh_grid(tree, rows, getattr(parent, 'marked_rows', set()), focus_day=str(day))
+        # Update the home screen if home_root is provided
+        if home_root and hasattr(home_root, 'update_ahb') and hasattr(home_root, 'get_current_month') and hasattr(home_root, 'year_var'):
+            current_month = home_root.get_current_month()
+            current_year = int(home_root.year_var.get())
+            logger.debug(f"Updating home screen AHB for month={current_month}, year={current_year}")
+            home_root.update_ahb(home_root, current_month, current_year)
+
+    def show_history(parent, conn, cursor):
+        logger.debug("Show history clicked")
+        hist_form = tk.Toplevel(parent)
+        win_id = 28
+        open_form_with_position(hist_form, conn, cursor, win_id, "Transaction History")
+        hist_form.transient(parent)
+        hist_form.geometry(f"{sc(800)}x{sc(400)}")  # Adjust size
+        hist_form.resizable(False, False)
+        hist_form.configure(bg=config.master_bg)
+        hist_form.grab_set()
+        text_area = tk.Text(hist_form, font=("Courier", 10))
+        text_area.place(x=sc(10), y=sc(10), height=sc(340), width=sc(760))
+        scrollbar = tk.Scrollbar(hist_form, orient="vertical", command=text_area.yview)
+        scrollbar.place(x=sc(770), y=sc(10), height=sc(340))
+        text_area.configure(yscrollcommand=scrollbar.set)
+
+        try:
+            cursor.execute("SELECT Rule_Desc FROM Trans_Rules WHERE Tr_ID = ?", (tr_id,))
+            rules = cursor.fetchall()
+            logger.debug(f"Retrieved {len(rules)} rules for Tr_ID {tr_id}: {rules}")
+        except Exception as e:
+            logger.error(f"Error querying Trans_Rules for Tr_ID {tr_id}: {e}\n{traceback.format_exc()}")
+            messagebox.showerror("Error", f"Failed to retrieve rule history: {e}", parent=hist_form)
+            close_form_with_position(hist_form, conn, cursor, win_id)
+            return
+            
+        # Format and insert rules into text area
+        if not rules:
+            text_area.insert("1.0", "No rules applied to this transaction")
+        else:
+            rule_text = [rule[0] for rule in rules]  # Extract Rule_Desc from tuples
+            formatted_text = "\n".join(f"{desc}" for i, desc in enumerate(rule_text))
+            text_area.insert("1.0", formatted_text)
+            logger.debug(f"Inserted text: {formatted_text}")
+        text_area.config(state="disabled")
+        
+        close_btn = tk.Button(hist_form, text="Close", font=(config.ha_button), bg=COLORS["exit_but_bg"], fg=COLORS["exit_but_tx"],
+                            command=lambda: close_form_with_position(hist_form, conn, cursor, win_id))
+        close_btn.place(x=sc(350), y=sc(360), width=sc(100))
 
     def cancel_transaction():
         close_form_with_position(form, conn, cursor, win_id)
@@ -566,6 +609,7 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
     cc_pay_btn.config(command=lambda: fill_amount())
     save_btn.config(command=save_transaction)
     if selected_row is not None:
+        history_btn.config(command=lambda: show_history(form, conn, cursor))
         delete_btn.config(command=delete_transaction_handler)
         cancel_btn.config(command=cancel_transaction)
     else:
@@ -587,27 +631,22 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
     tr_id = None
     if selected_row is not None and 0 <= selected_row < len(rows) and rows[selected_row]["status"] != "Total":
         tr_id = rows[selected_row].get("tr_id")
+        logger.debug(f"selected_row = {selected_row},  tr_id = {tr_id}")
         if tr_id:
-            cursor.execute("SELECT Tr_Type, Tr_Day, Tr_Month, Tr_Year, Tr_Stat, Tr_Query_Flag, Tr_Amount, Tr_Desc, Tr_Acc_From, Tr_Acc_To, Tr_Exp_ID, Tr_ExpSub_ID "
-                        "FROM Trans WHERE Tr_ID=?", (tr_id,))
-            result = cursor.fetchone()
-            if result:
-                tr_type, tr_day, tr_month, tr_year, tr_stat, tr_query_flag, tr_amount, tr_desc, tr_acc_from, tr_acc_to, tr_exp_id, tr_expsub_id = result
-                type_map = {1: "Income", 2: "Expense", 3: "Transfer"}
-                radio_var.set(type_map.get(tr_type, "Expense"))
-                set_trans_type({"Income": 1, "Expense": 2, "Transfer": 3}.get(radio_var.get(), 2), 
+            trans_data = fetch_transaction(cursor, tr_id)
+            if trans_data:
+                radio_var.set(trans_data["type"])
+                set_trans_type({"Income": 1, "Expense": 2, "Transfer": 3}.get(trans_data["type"], 2), 
                             trans_type_buttons, radio_var, radio_checked_img, radio_unchecked_img)
-                cal.selection_set(f"{tr_month:02d}/{tr_day:02d}/{str(tr_year)[-2:]}")
-                amount_entry.insert(0, f"{abs(tr_amount):.2f}")
-                desc_entry.insert(0, tr_desc or "")
-                status_map = {0: "Unknown", 1: "Forecast", 2: "Processing", 3: "Complete"}
-                status_var.set(status_map.get(tr_stat, "Forecast"))
-                set_status({"Forecast": 1, "Processing": 2, "Complete": 3}.get(status_var.get(), 1), 
+                cal.selection_set(f"{trans_data['month']:02d}/{trans_data['day']:02d}/{str(trans_data['year'])[-2:]}")
+                amount_entry.insert(0, f"{abs(trans_data['amount']):.2f}")
+                desc_entry.insert(0, trans_data["desc"] or "")
+                status_var.set(trans_data["status"])
+                set_status({"Forecast": 1, "Processing": 2, "Complete": 3}.get(trans_data["status"], 1), 
                         status_buttons, status_var, radio_checked_img, radio_unchecked_img)
-                flag = (tr_query_flag if tr_query_flag in [0, 1, 2, 4] else 0)
-                set_flag_edit(flag)
-                source_account = full_accounts[tr_acc_from - 1] if tr_acc_from and 0 < tr_acc_from <= len(full_accounts) else ""
-                dest_account = full_accounts[tr_acc_to - 1] if tr_acc_to and 0 < tr_acc_to <= len(full_accounts) else ""
+                set_flag_edit(trans_data["flag"])
+                source_account = full_accounts[trans_data["acc_from"] - 1] if trans_data["acc_from"] and 0 < trans_data["acc_from"] <= len(full_accounts) else ""
+                dest_account = full_accounts[trans_data["acc_to"] - 1] if trans_data["acc_to"] and 0 < trans_data["acc_to"] <= len(full_accounts) else ""
                 if radio_var.get() == "Income":
                     dest_var.set(dest_account)
                 elif radio_var.get() == "Expense":
@@ -615,42 +654,42 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
                 elif radio_var.get() == "Transfer":
                     source_var.set(source_account)
                     dest_var.set(dest_account)
-                if radio_var.get() == "Transfer" and 6 < tr_acc_to < 13:
+                if radio_var.get() == "Transfer" and 6 < trans_data["acc_to"] < 13:
                     stmt_balances = fetch_statement_balances(cursor, month, year, local_accounts)
-                    pay_amt = stmt_balances[tr_acc_to - 1]
+                    pay_amt = stmt_balances[trans_data["acc_to"] - 1]
                     if pay_amt is not None and pay_amt < 0:
                         pay_amt = 0 - pay_amt
                         cc_pay_btn.config(text="<<   {:,.2f}".format(pay_amt), bg=COLORS["act_but_bg"], highlightbackground=COLORS["act_but_hi_bg"], state="active")
                         cc_pay_btn.place(x=sc(650), y=sc(125), width=sc(150))
                         cc_pay_btn.update()  # Force button redraw
-                        #logger.debug(f"cc_pay_btn shown (existing transaction): text='<<   {pay_amt:,.2f}', bg={COLORS['pale_green']}")
+                        #logger.debug(f"cc_pay_btn shown (existing transaction): text='<<   {pay_amt:,.2f}', bg={COLORS['act_but_bg']}")
                     else:
-                        cc_pay_btn.config(bg=COLORS["grey"], highlightbackground=COLORS["grey"], state="disabled")
+                        cc_pay_btn.config(bg=config.master_bg, highlightbackground=config.master_bg, state="disabled")
                         cc_pay_btn.place_forget()
-                        #logger.debug(f"cc_pay_btn hidden (existing transaction): bg={COLORS['pale_grey']}, state=disabled")
+                        #logger.debug(f"cc_pay_btn hidden (existing transaction): bg={config.master_bg}, state=disabled")
                 update_fields("", "", "")
-                if tr_exp_id and tr_type != 3:
-                    if tr_exp_id == 99:
+                if trans_data["exp_id"] and trans_data["type"] != "Transfer":
+                    if trans_data["exp_id"] == 99:
                         ignore_box.configure(state="normal", foreground=COLORS["black"])
                         ignore_checkbox_var.set(1)
                         ignore_label.configure(foreground=COLORS["black"])
                         cat_var.set("Ignore")
                         scat_var.set("")
                         cat_menu.configure(state="disabled")
-                        cat_label.configure(foreground=COLORS["grey"])
+                        cat_label.configure(foreground=COLORS["disabled_tx"])
                         scat_menu.configure(state="disabled")
-                        scat_label.configure(foreground=COLORS["grey"])
+                        scat_label.configure(foreground=COLORS["disabled_tx"])
                     else:
                         for desc, pid in cat_options.items():
-                            if pid == tr_exp_id:
+                            if pid == trans_data["exp_id"]:
                                 cat_var.set(desc)
                                 update_subcategories()
                                 break
-                if tr_expsub_id and tr_type != 3:
-                    subcategories = fetch_subcategories(cursor, tr_exp_id, year)
+                if trans_data["expsub_id"] and trans_data["type"] != "Transfer":
+                    subcategories = fetch_subcategories(cursor, trans_data["exp_id"], year)
                     scat_options = {row[1]: row[0] for row in subcategories}
                     for desc, cid in scat_options.items():
-                        if cid == tr_expsub_id:
+                        if cid == trans_data["expsub_id"]:
                             scat_var.set(desc)
                             break
     else:
@@ -661,7 +700,7 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
 
     form.wait_window()
 
-def show_maint_toolbox(parent, conn, cursor):
+def show_maint_toolbox(parent, conn, cursor, refresh_callback):
     toolbox = tk.Toplevel(parent)
     win_id = 14
     open_form_with_position(toolbox, conn, cursor, win_id, "Maintenance Forms")
@@ -681,7 +720,7 @@ def show_maint_toolbox(parent, conn, cursor):
                             create_regular_transactions_maint_form(parent, conn, cursor)]).pack(pady=2)
     tk.Button(toolbox, text="Manage Colour Scheme", width=36, 
             command=lambda: [close_form_with_position(toolbox, conn, cursor, win_id),
-                            create_colour_scheme_maint_form(parent, conn, cursor)]).pack(pady=2)
+                            create_colour_scheme_maint_form(parent, conn, cursor, refresh_callback)]).pack(pady=2)
     tk.Button(toolbox, text="Manage Account Years", width=36, bg=COLORS["home_test_bg"], 
             command=lambda: [close_form_with_position(toolbox, conn, cursor, win_id),
                             create_account_years_maint_form(parent, conn, cursor)]).pack(pady=2)
@@ -708,3 +747,6 @@ def show_maint_toolbox(parent, conn, cursor):
                             create_rules_form(parent, conn, cursor)]).pack(pady=2)
     tk.Button(toolbox, text="Close", width=36, bg=COLORS["exit_but_bg"],
             command=lambda: close_form_with_position(toolbox, conn, cursor, win_id)).pack(pady=5)
+    
+    
+    

@@ -2,6 +2,7 @@ import sqlite3
 import os
 import sys
 import shutil
+import traceback
 from datetime import datetime
 from calendar import monthrange
 import logging
@@ -166,6 +167,137 @@ def fetch_actuals(cursor, pid, cid, month, year):
     result = cursor.fetchone()
     return result[0] or 0.0
 
+def fetch_account_transactions(cursor, acc_id, year, account_data, ff_flag, acc_limit):
+    """Fetch transactions for a single account in the given year, ordered by month and day, with daily totals."""
+    logger.debug(f"Fetching transactions for Acc_ID={acc_id}, Year={year}, FF_Flag={ff_flag}, Acc_Credit_Limit={acc_limit}")
+    try:
+        cursor.execute("""
+            SELECT Tr_ID, Tr_Type, Tr_Reg_ID, Tr_Day, Tr_Month, Tr_Year, Tr_Stat, Tr_Query_Flag, Tr_Amount, 
+                Tr_Desc, Tr_Acc_From, Tr_Acc_To, Tr_Exp_ID, Tr_FF_Journal_ID
+            FROM Trans 
+            WHERE (Tr_Acc_From = ? OR Tr_Acc_To = ?) AND Tr_Year = ? 
+            ORDER BY Tr_Month, Tr_Day, Tr_Stat DESC
+        """, (acc_id, acc_id, year))
+        db_rows = cursor.fetchall()
+        rows = []
+        balance = float(account_data[2] or 0.0)  # Acc_Open
+        current_day = None
+        current_month = None
+        dow_map = {0: "Mon", 1: "Tue", 2: "Wed", 3: "Thu", 4: "Fri", 5: "Sat", 6: "Sun"}
+        
+        if not db_rows:
+            # Add empty rows if no transactions
+            total_values = {"day": "", "date": "", "desc": "", "income": "", "expense": "", "balance": "", 
+                            "status": "Total", "flag": 0, "type": "Total", "month": 1, "num_day": 0, "is_weekend": 0, "overlimit": False}
+            rows.extend([total_values, 
+                        {"day": "", "date": "", "desc": "NO Transactions found for this year", "income": "", "expense": "", "balance": "", 
+                        "status": "Total", "flag": 0, "type": "Total", "month": 1, "num_day": 0, "is_weekend": 0, "overlimit": False},
+                        total_values])
+        else:
+            for row in db_rows:
+                tr_id, tr_type, tr_reg_id, tr_day, tr_month, tr_year, tr_stat, tr_query_flag, tr_amount, tr_desc, tr_acc_from, tr_acc_to, tr_exp_id, tr_ff_id = row
+                type_map = {1: "Income", 2: "Expense", 3: "Transfer"}
+                trans_type = type_map.get(tr_type, "Expense")
+                status_map = {1: "Forecast", 2: "Processing", 3: "Complete"}
+                status = status_map.get(tr_stat, "Unknown")
+                flag = tr_query_flag if tr_query_flag in [0, 1, 2, 4, 8, 9, 10, 12] else 0
+                date_obj = datetime(tr_year, tr_month, tr_day)
+                is_weekend = 1 if date_obj.weekday() in (5, 6) else 0
+                day_name = dow_map[date_obj.weekday()]
+                
+                # Add total row before new day
+                if current_day is not None and (current_day != tr_day or current_month != tr_month):
+                    rows.append({
+                        "day": "", "date": "", "desc": "End of Day Balance", "income": "", "expense": "", "balance": balance,
+                        "status": "Total", "flag": 0, "type": "Total", "month": current_month, "num_day": 0, "is_weekend": 0, "overlimit": balance < acc_limit
+                    })
+                
+                current_day = tr_day
+                current_month = tr_month
+                
+                # Format description with FF ID if enabled
+                if ff_flag == 1 and tr_ff_id and tr_ff_id != 0:
+                    tr_desc = f"({tr_ff_id}) {tr_desc}"
+                if tr_reg_id > 0:
+                    tr_desc = f"** {tr_desc}"
+                
+                income = expense = 0.0
+                if trans_type == "Income" and tr_acc_to == acc_id:
+                    income = float(tr_amount or 0.0)
+                    balance += income
+                elif trans_type == "Expense" and tr_acc_from == acc_id:
+                    expense = float(tr_amount or 0.0)
+                    balance -= expense
+                elif trans_type == "Transfer":
+                    if tr_acc_from == acc_id:
+                        expense = float(tr_amount or 0.0)
+                        balance -= expense
+                    elif tr_acc_to == acc_id:
+                        income = float(tr_amount or 0.0)
+                        balance += income
+                
+                rows.append({
+                    "tr_id": tr_id, "day": day_name, "date": f"{tr_day:02d}/{tr_month:02d}/{tr_year}", 
+                    "desc": tr_desc, "income": income, "expense": expense, "balance": "",
+                    "status": status, "flag": flag, "type": trans_type, "month": tr_month, "num_day": tr_day, 
+                    "is_weekend": is_weekend, "overlimit": False, "exp_id": tr_exp_id
+                })
+            
+            # Add final total row
+            if current_day is not None:
+                rows.append({
+                    "day": "", "date": "", "desc": "End of Day Balance", "income": "", "expense": "", "balance": balance,
+                    "status": "Total", "flag": 0, "type": "Total", "month": current_month, "num_day": 0, "is_weekend": 0, "overlimit": balance < acc_limit
+                })
+        
+        logger.debug(f"Fetched {len(rows)} rows (including totals) for Acc_ID={acc_id}")
+        return rows
+    except Exception as e:
+        logger.error(f"Error fetching transactions for Acc_ID={acc_id}: {e}\n{traceback.format_exc()}")
+        return []
+
+
+
+
+def fetch_transaction(cursor, tr_id):
+    """Fetch a single transaction record by Tr_ID."""
+    logger.debug(f"Fetching transaction for Tr_ID={tr_id}")
+    try:
+        cursor.execute("""
+            SELECT Tr_ID, Tr_Type, Tr_Reg_ID, Tr_Day, Tr_Month, Tr_Year, Tr_Stat, Tr_Query_Flag, Tr_Amount, 
+                Tr_Desc, Tr_Acc_From, Tr_Acc_To, Tr_Exp_ID, Tr_ExpSub_ID, Tr_FF_Journal_ID
+            FROM Trans 
+            WHERE Tr_ID = ?
+        """, (tr_id,))
+        row = cursor.fetchone()
+        if not row:
+            logger.error(f"No transaction found for Tr_ID={tr_id}")
+            return None
+        tr_id, tr_type, tr_reg_id, tr_day, tr_month, tr_year, tr_stat, tr_query_flag, tr_amount, tr_desc, tr_acc_from, tr_acc_to, tr_exp_id, tr_expsub_id, tr_ff_id = row
+        type_map = {1: "Income", 2: "Expense", 3: "Transfer"}
+        status_map = {1: "Forecast", 2: "Processing", 3: "Complete"}
+        return {
+            "tr_id": tr_id,
+            "type": type_map.get(tr_type, "Expense"),
+            "reg_id": tr_reg_id,
+            "day": tr_day,
+            "month": tr_month,
+            "year": tr_year,
+            "status": status_map.get(tr_stat, "Unknown"),
+            "flag": tr_query_flag if tr_query_flag in [0, 1, 2, 4, 8, 9, 10, 12] else 0,
+            "amount": float(tr_amount or 0.0),
+            "desc": tr_desc or "",
+            "acc_from": tr_acc_from,
+            "acc_to": tr_acc_to,
+            "exp_id": tr_exp_id,
+            "expsub_id": tr_expsub_id,
+            "ff_id": tr_ff_id
+        }
+    except Exception as e:
+        logger.error(f"Error fetching transaction for Tr_ID={tr_id}: {e}\n{traceback.format_exc()}")
+        return None
+
+
 
 # Lookups
 def fetch_notes(cursor):
@@ -204,6 +336,7 @@ def update_lookup_color(cursor, conn, lup_seq, lup_type_id, color):
         conn.commit()
     except Exception as e:
         logger.error(f"Error updating color for Lup_LupT_ID={lup_type_id}, Lup_Seq={lup_seq}: {e}")
+        
 ################### Category (IE_Cata) Table (Remember to use Year in queries)
 
 # Fetch Parent Categories
@@ -260,7 +393,7 @@ def fetch_account_full_names(cursor, year):
 
 # Fetch Account Names for use by save rule
 def fetch_account_names(cursor, year):
-    cursor.execute("SELECT Acc_ID, Acc_Name FROM Account WHERE Acc_Year = ? AND Acc_ID BETWEEN 1 AND 12 ORDER BY Acc_ID", (year,))
+    cursor.execute("SELECT Acc_ID, Acc_Name FROM Account WHERE Acc_Year = ? ORDER BY Acc_ID", (year,))
     return cursor.fetchall()
 
 # Fetch Account Names for use by Triggers/Actions Combo

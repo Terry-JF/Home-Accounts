@@ -32,8 +32,7 @@ def create_regular_transactions_maint_form(parent, conn, cursor):       # Win_ID
     form = tk.Toplevel(parent)
     win_id = 3
     open_form_with_position(form, conn, cursor, win_id, "Regular Transaction Maintenance")
-    scaling_factor = parent.winfo_fpixels('1i') / 96  # Get scaling factor (e.g., 2.0 for 200% scaling)
-    form.geometry(f"{int(1600 * scaling_factor)}x{int(800 * scaling_factor)}")  # Adjust size
+    form.geometry(f"{sc(1620)}x{sc(800)}")  # Adjust size
     #form.geometry("1600x800")
     form.resizable(False, False)
     form.configure(bg=config.master_bg)
@@ -48,35 +47,41 @@ def create_regular_transactions_maint_form(parent, conn, cursor):       # Win_ID
     tree_items = []
 
     # Select/Clear All Checkbox
-    chk_all = tk.Button(form, text="Select/Clear ALL Rows", font=("Arial", 11), bg=config.master_bg, 
-                        command=lambda: toggle_all_checkboxes()).place(x=int(25 * scaling_factor), y=int(25 * scaling_factor), width=int(180 * scaling_factor))
+    chk_all = tk.Button(form, text="Select/Clear ALL Rows", font=(config.ha_large), 
+                        command=lambda: toggle_all_checkboxes()).place(x=sc(25), y=sc(20), width=sc(180))
 
     # Year Selection
-    tk.Label(form, text="Select Year:", font=("Arial", 11), bg=config.master_bg).place(x=int(300 * scaling_factor), y=int(30 * scaling_factor))
+    tk.Label(form, text="Select Year:", font=(config.ha_button), bg=config.master_bg).place(x=sc(300), y=sc(25))
     year_combo = ttk.Combobox(  form, textvariable=selected_year, values=fetch_years(cursor), 
-                                font=("Arial", 11), width=6, state="readonly")
-    year_combo.place(x=int(390 * scaling_factor), y=int(25 * scaling_factor))
+                                font=(config.ha_button), width=6, state="readonly")
+    year_combo.place(x=sc(390), y=sc(25))
     year_combo.bind("<<ComboboxSelected>>", lambda e: refresh_needed.set(True))
+
+    # Treeview styling
+    style = ttk.Style()
+    style.configure("Treeview", font=(config.ha_normal))
+    style.configure("Treeview.Heading", font=(config.ha_head11))
 
     # ListView (Treeview)
     columns = ("Sel", "Frequency", "T Day", "T Month", "Trans Type", "Amount", "Description", 
             "Start Date", "Stop Date", "Exp Category", "Exp Sub-Category", "Account From", "Account To", "Flag")
     tree = ttk.Treeview(form, columns=columns, show="headings", height=30, selectmode="browse")
-    tree.place(x=int(20 * scaling_factor), y=int(60 * scaling_factor), width=int(1560 * scaling_factor), height=int(675 * scaling_factor))
+    tree.place(x=sc(20), y=sc(60), width=sc(1560), height=sc(675))
     scrollbar = tk.Scrollbar(form, orient="vertical", command=tree.yview)
-    scrollbar.place(x=int(1580 * scaling_factor), y=int(60 * scaling_factor), height=int(675 * scaling_factor))
+    scrollbar.place(x=sc(1580), y=sc(60), height=sc(675))
     tree.configure(yscrollcommand=scrollbar.set)
 
     # Column widths and headings
-    w40 = int(40 * scaling_factor)
-    w50 = int(50 * scaling_factor)
-    w60 = int(60 * scaling_factor)
-    w80 = int(80 * scaling_factor)
-    w100 = int(100 * scaling_factor)
-    w150 = int(150 * scaling_factor)
-    w250 = int(250 * scaling_factor)
-    widths = [w50, w80, w40, w60, w100, w80, w250, w80, w80, w150, w150, w100, w100, w80]
-    anchors = ["center", "center", "center", "w", "w", "e", "w", "w", "w", "w", "w", "w", "w", "center"]
+    w40 = sc(40)
+    w50 = sc(50)
+    w60 = sc(60)
+    w70 = sc(70)
+    w80 = sc(80)
+    w100 = sc(100)
+    w150 = sc(150)
+    w250 = sc(250)
+    widths = [w50, w80, w40, w60, w100, w80, w250, w70, w70, w150, w150, w100, w100, w80]
+    anchors = ["center", "center", "center", "w", "w", "e", "w", "center", "center", "w", "w", "w", "w", "center"]
     for col, width, anchor in zip(columns, widths, anchors):
         tree.heading(col, text=col, anchor="center")
         tree.column(col, width=width, anchor=anchor)
@@ -86,14 +91,14 @@ def create_regular_transactions_maint_form(parent, conn, cursor):       # Win_ID
     tree.tag_configure("checked", background=COLORS["pale_blue"])  # Use tag_configure for Treeview
 
     # Buttons
-    tk.Button(  form, text="Copy 'Selected Rows ONLY' into Accounts", font=("Arial", 10), width=40,
-                command=lambda: copy_selected_to_trans()).place(x=int(50 * scaling_factor), y=int(750 * scaling_factor))
-    tk.Button(  form, text="Amend Highlighted Row", font=("Arial", 10), width=25,
-                command=lambda: amend_regular()).place(x=int(450 * scaling_factor), y=int(750 * scaling_factor))
-    tk.Button(  form, text="New Regular Transaction", font=("Arial", 10), width=25,
-                command=lambda: new_regular()).place(x=int(750 * scaling_factor), y=int(750 * scaling_factor))
-    tk.Button(  form, text="Close", font=("Arial", 10), width=25,
-                command=lambda: close_form_with_position(form, conn, cursor, win_id)).place(x=int(1300 * scaling_factor), y=int(750 * scaling_factor))
+    tk.Button(  form, text="Copy 'Selected Rows ONLY' into Accounts", font=(config.ha_button), width=40,
+                command=lambda: copy_selected_to_trans()).place(x=sc(50), y=sc(750))
+    tk.Button(  form, text="Amend Highlighted Row", font=(config.ha_button), width=25,
+                command=lambda: amend_regular()).place(x=sc(450), y=sc(750))
+    tk.Button(  form, text="New Regular Transaction", font=(config.ha_button), width=25,
+                command=lambda: new_regular()).place(x=sc(750), y=sc(750))
+    tk.Button(  form, text="Close", font=(config.ha_button), bg=COLORS["exit_but_bg"], width=25,
+                command=lambda: close_form_with_position(form, conn, cursor, win_id)).place(x=sc(1300), y=sc(750))
 
     def toggle_all_checkboxes():
         state = check_all_var.get()
@@ -255,8 +260,7 @@ def create_regular_transaction_form(parent, form, conn, cursor, curr_rec_id=0, i
     # form = tk.Toplevel(parent)
     win_id = 18
     open_form_with_position(form, conn, cursor, win_id, "Regular Transaction Entry/Edit")
-    scaling_factor = parent.winfo_fpixels('1i') / 96  # Get scaling factor (e.g., 2.0 for 200% scaling)
-    form.geometry(f"{int(1400 * scaling_factor)}x{int(300 * scaling_factor)}")  # Adjust size
+    form.geometry(f"{sc(1400)}x{sc(300)}")  # Adjust size
     #form.geometry("1400x300")
     form.resizable(False, False)
     form.configure(bg=config.master_bg)
@@ -285,62 +289,62 @@ def create_regular_transaction_form(parent, form, conn, cursor, curr_rec_id=0, i
     flag_var = tk.BooleanVar(value=False if is_new else bool(reg_rec["Reg_Query_Flag"]))
 
     # Widgets
-    tk.Label(form, text="Frequency:", font=("Arial", 10), bg=config.master_bg).place(x=int(50 * scaling_factor), y=int(50 * scaling_factor))
+    tk.Label(form, text="Frequency:", font=("Arial", 10), bg=config.master_bg).place(x=sc(50), y=sc(50))
     freq_combo = ttk.Combobox(form, textvariable=frequency_var, values=["Monthly", "Weekly", "Yearly", "2-Weekly", "4-Weekly"], state="readonly", font=("Arial", 10))
-    freq_combo.place(x=int(180 * scaling_factor), y=int(45 * scaling_factor), width=int(150 * scaling_factor))
+    freq_combo.place(x=sc(180), y=sc(45), width=sc(150))
 
     day_label = tk.Label(form, text="Day of Month:", font=("Arial", 10), bg=config.master_bg)
-    day_label.place(x=int(50 * scaling_factor), y=int(100 * scaling_factor))
+    day_label.place(x=sc(50), y=sc(100))
     day_combo = ttk.Combobox(form, textvariable=day_var, state="readonly", font=("Arial", 10))
-    day_combo.place(x=int(180 * scaling_factor), y=int(95 * scaling_factor), width=int(150 * scaling_factor))
+    day_combo.place(x=sc(180), y=sc(95), width=sc(150))
 
-    tk.Label(form, text="Month of Year:", font=("Arial", 10), bg=config.master_bg).place(x=int(50 * scaling_factor), y=int(150 * scaling_factor))
+    tk.Label(form, text="Month of Year:", font=("Arial", 10), bg=config.master_bg).place(x=sc(50), y=sc(150))
     month_combo = ttk.Combobox(form, textvariable=month_var, values=[""] + [datetime(2023, m, 1).strftime("%B") for m in range(1, 13)], state="readonly", font=("Arial", 10))
-    month_combo.place(x=int(180 * scaling_factor), y=int(145 * scaling_factor), width=int(150 * scaling_factor))
+    month_combo.place(x=sc(180), y=sc(145), width=sc(150))
 
-    tk.Label(form, text="Transaction Type:", font=("Arial", 10), bg=config.master_bg).place(x=int(50 * scaling_factor), y=int(200 * scaling_factor))
+    tk.Label(form, text="Transaction Type:", font=("Arial", 10), bg=config.master_bg).place(x=sc(50), y=sc(200))
     type_combo = ttk.Combobox(form, textvariable=type_var, values=["Income", "Expenditure", "Transfer"], state="readonly", font=("Arial", 10))
-    type_combo.place(x=int(180 * scaling_factor), y=int(195 * scaling_factor), width=int(150 * scaling_factor))
+    type_combo.place(x=sc(180), y=sc(195), width=sc(150))
 
-    tk.Label(form, text="Amount:", font=("Arial", 10), bg=config.master_bg).place(x=int(400 * scaling_factor), y=int(50 * scaling_factor))
+    tk.Label(form, text="Amount:", font=("Arial", 10), bg=config.master_bg).place(x=sc(400), y=sc(50))
     amount_entry = tk.Entry(form, textvariable=amount_var, font=("Arial", 10))
-    amount_entry.place(x=int(500 * scaling_factor), y=int(45 * scaling_factor), width=int(150 * scaling_factor))
+    amount_entry.place(x=sc(500), y=sc(45), width=sc(150))
 
-    tk.Label(form, text="Description:", font=("Arial", 10), bg=config.master_bg).place(x=int(400 * scaling_factor), y=int(100 * scaling_factor))
+    tk.Label(form, text="Description:", font=("Arial", 10), bg=config.master_bg).place(x=sc(400), y=sc(100))
     desc_entry = tk.Entry(form, textvariable=desc_var, font=("Arial", 10))
-    desc_entry.place(x=int(500 * scaling_factor), y=int(95 * scaling_factor), width=int(200 * scaling_factor))
+    desc_entry.place(x=sc(500), y=sc(95), width=sc(200))
 
-    tk.Label(form, text="Start Date:", font=("Arial", 10), bg=config.master_bg).place(x=int(400 * scaling_factor), y=int(150 * scaling_factor))
+    tk.Label(form, text="Start Date:", font=("Arial", 10), bg=config.master_bg).place(x=sc(400), y=sc(150))
     start_entry = tk.Entry(form, textvariable=start_var, font=("Arial", 10), state="readonly")
-    start_entry.place(x=int(500 * scaling_factor), y=int(145 * scaling_factor), width=int(150 * scaling_factor))
-    tk.Button(form, text="Cal", font=("Arial", 10), command=lambda: pick_date(start_entry, form)).place(x=int(660 * scaling_factor), y=int(145 * scaling_factor), 
-                                                                                                        width=int(30 * scaling_factor))
+    start_entry.place(x=sc(500), y=sc(145), width=sc(150))
+    tk.Button(form, text="Cal", font=("Arial", 10), command=lambda: pick_date(start_entry, form)).place(x=sc(660), y=sc(145), 
+                                                                                                        width=sc(30))
 
-    tk.Label(form, text="Stop Date:", font=("Arial", 10), bg=config.master_bg).place(x=int(400 * scaling_factor), y=int(200 * scaling_factor))
+    tk.Label(form, text="Stop Date:", font=("Arial", 10), bg=config.master_bg).place(x=sc(400), y=sc(200))
     stop_entry = tk.Entry(form, textvariable=stop_var, font=("Arial", 10), state="readonly")
-    stop_entry.place(x=int(500 * scaling_factor), y=int(195 * scaling_factor), width=int(150 * scaling_factor))
-    tk.Button(form, text="Cal", font=("Arial", 10), command=lambda: pick_date(stop_entry, form)).place(x=int(660 * scaling_factor), y=int(195 * scaling_factor), 
-                                                                                                       width=int(30 * scaling_factor))
+    stop_entry.place(x=sc(500), y=sc(195), width=sc(150))
+    tk.Button(form, text="Cal", font=("Arial", 10), command=lambda: pick_date(stop_entry, form)).place(x=sc(660), y=sc(195), 
+                                                                                                       width=sc(30))
 
-    tk.Label(form, text="Exp Category:", font=("Arial", 10), bg=config.master_bg).place(x=int(800 * scaling_factor), y=int(50 * scaling_factor))
+    tk.Label(form, text="Exp Category:", font=("Arial", 10), bg=config.master_bg).place(x=sc(800), y=sc(50))
     exp_cat_combo = ttk.Combobox(form, textvariable=exp_cat_var, state="readonly", font=("Arial", 10))
-    exp_cat_combo.place(x=int(960 * scaling_factor), y=int(45 * scaling_factor), width=int(200 * scaling_factor))
+    exp_cat_combo.place(x=sc(960), y=sc(45), width=sc(200))
 
-    tk.Label(form, text="Exp Sub-Category:", font=("Arial", 10), bg=config.master_bg).place(x=int(800 * scaling_factor), y=int(100 * scaling_factor))
+    tk.Label(form, text="Exp Sub-Category:", font=("Arial", 10), bg=config.master_bg).place(x=sc(800), y=sc(100))
     exp_sub_combo = ttk.Combobox(form, textvariable=exp_sub_var, state="readonly", font=("Arial", 10))
-    exp_sub_combo.place(x=int(960 * scaling_factor), y=int(95 * scaling_factor), width=int(200 * scaling_factor))
+    exp_sub_combo.place(x=sc(960), y=sc(95), width=sc(200))
 
-    tk.Label(form, text="Account From:", font=("Arial", 10), bg=config.master_bg).place(x=int(800 * scaling_factor), y=int(150 * scaling_factor))
+    tk.Label(form, text="Account From:", font=("Arial", 10), bg=config.master_bg).place(x=sc(800), y=sc(150))
     acc_from_combo = ttk.Combobox(form, textvariable=acc_from_var, values=fetch_account_full_names(cursor, year), state="readonly", font=("Arial", 10))
-    acc_from_combo.place(x=int(960 * scaling_factor), y=int(145 * scaling_factor), width=int(200 * scaling_factor))
+    acc_from_combo.place(x=sc(960), y=sc(145), width=sc(200))
 
-    tk.Label(form, text="Account To:", font=("Arial", 10), bg=config.master_bg).place(x=int(800 * scaling_factor), y=int(200 * scaling_factor))
+    tk.Label(form, text="Account To:", font=("Arial", 10), bg=config.master_bg).place(x=sc(800), y=sc(200))
     acc_to_combo = ttk.Combobox(form, textvariable=acc_to_var, values=fetch_account_full_names(cursor, year), state="readonly", font=("Arial", 10))
-    acc_to_combo.place(x=int(960 * scaling_factor), y=int(195 * scaling_factor), width=int(200 * scaling_factor))
+    acc_to_combo.place(x=sc(960), y=sc(195), width=sc(200))
 
     flag_btn = tk.Button(form, text="Flag OFF", font=("Arial", 10), bg=COLORS["grey"],
                             command=lambda: toggle_flag_btn())
-    flag_btn.place(x=int(1250 * scaling_factor), y=int(50 * scaling_factor), width=int(100 * scaling_factor), height=int(35 * scaling_factor))
+    flag_btn.place(x=sc(1250), y=sc(50), width=sc(100), height=sc(35))
     if not is_new and reg_rec["Reg_Query_Flag"]:
         flag_var.set(True)
         flag_btn.config(text="Flag ON", bg=COLORS["flag_y_bg"])
@@ -348,11 +352,11 @@ def create_regular_transaction_form(parent, form, conn, cursor, curr_rec_id=0, i
         flag_var.set(False)
         flag_btn.config(text="Flag OFF", bg=COLORS["grey"])
 
-    tk.Button(form, text="Save", font=("Arial", 10), command=lambda: save_record()).place(x=int(250 * scaling_factor), y=int(250 * scaling_factor), width=int(150 * scaling_factor))
-    tk.Button(form, text="Cancel", font=("Arial", 10), command=lambda: close_form()).place(x=int(850 * scaling_factor), y=int(250 * scaling_factor), width=int(150 * scaling_factor))
+    tk.Button(form, text="Save", font=("Arial", 10), command=lambda: save_record()).place(x=sc(250), y=sc(250), width=sc(150))
+    tk.Button(form, text="Cancel", font=("Arial", 10), command=lambda: close_form()).place(x=sc(850), y=sc(250), width=sc(150))
     if not is_new:
-        tk.Button(form, text="DELETE", font=("Arial", 10), bg="red", command=lambda: delete_record()).place(x=int(1250 * scaling_factor), y=int(200 * scaling_factor), 
-                                                                                                            width=int(100 * scaling_factor))
+        tk.Button(form, text="DELETE", font=("Arial", 10), bg="red", command=lambda: delete_record()).place(x=sc(1250), y=sc(200), 
+                                                                                                            width=sc(100))
     def toggle_flag_btn():
         if flag_var.get():
             flag_var.set(False)
@@ -451,14 +455,14 @@ def create_regular_transaction_form(parent, form, conn, cursor, curr_rec_id=0, i
         # Pack the calendar and buttons
         calendar.pack(pady=10)
         tk.Button(cal, text="   OK   ", command=lambda: [entry.delete(0, tk.END), entry.insert(0, calendar.get_date()), 
-                                                         cal.destroy()]).pack(padx=int(20 * scaling_factor), pady=int(10 * scaling_factor))
+                                                         cal.destroy()]).pack(padx=sc(20), pady=sc(10))
         tk.Button(cal, text=" Clear ", command=lambda: [entry.delete(0, tk.END), entry.insert(0, "None"), 
-                                                        cal.destroy()]).pack(padx=int(20 * scaling_factor), pady=int(10 * scaling_factor))
+                                                        cal.destroy()]).pack(padx=sc(20), pady=sc(10))
 
         # Center the calendar
         cal.update_idletasks()
-        cal_width = max(cal.winfo_width(), int(300 * scaling_factor))  # Minimum width for calendar
-        cal_height = max(cal.winfo_height(), int(320 * scaling_factor))  # Minimum height to fit calendar + buttons
+        cal_width = max(cal.winfo_width(), sc(300))  # Minimum width for calendar
+        cal_height = max(cal.winfo_height(), sc(320))  # Minimum height to fit calendar + buttons
         center_x = parent_x + (parent_width - cal_width) // 2
         center_y = parent_y + (parent_height - cal_height) // 2
         cal.geometry(f"{cal_width}x{cal_height}+{center_x}+{center_y}")

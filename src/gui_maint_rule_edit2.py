@@ -338,7 +338,7 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame, root, 
                 if ew:
                     ew.grid(row=j + 1, column=3)
                 rows[j] = (tid, dbtn, cb, vw, j + 1, ew, tid_id)
-            add_trigger_btn.grid(row=len(rows) + 1, column=0, columnspan=2)
+            add_trigger_btn.grid(row=len(rows) + 1, column clays, columnspan=2)
             comment.grid(row=len(rows) + 1, column=2, columnspan=2)
             edit_scrolled_frame.canvas.configure(scrollregion=edit_scrolled_frame.canvas.bbox("all"))
             edit_form.update_idletasks()

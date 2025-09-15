@@ -18,7 +18,7 @@ from rules_engine import (process_transactions, test_rules)
 from config import CONFIG, COLORS, get_config
 import config
 
-# Set up logging
+# Set up logger
 logger = logging.getLogger('HA.gc_utils')
 
 ### GoCardless Maintenance Form and related functions ###
@@ -54,7 +54,7 @@ def create_or_update_task(task_name, time1, time2=None, enabled=True):
     # Convert times to 24-hour format
     time1_24hr = convert_to_24hr(time1)
     if not time1_24hr:
-        logging.error(f"Invalid time1 format: {time1}")
+        logger.error(f"Invalid time1 format: {time1}")
         return False
     time2_24hr = convert_to_24hr(time2) if time2 else None
     
@@ -65,49 +65,49 @@ def create_or_update_task(task_name, time1, time2=None, enabled=True):
     if not enabled:
         cmd = f'schtasks /CHANGE /TN "{task_name}" /DISABLE'
     
-    logging.debug(f"Executing schtasks command: {cmd}")
+    logger.debug(f"Executing schtasks command: {cmd}")
     try:
         result = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
-        logging.debug(f"schtasks output: {result.stdout}")
+        logger.debug(f"schtasks output: {result.stdout}")
         return True
     except subprocess.CalledProcessError as e:
-        logging.error(f"schtasks failed: {e.stderr}")
+        logger.error(f"schtasks failed: {e.stderr}")
         return False
 
 def delete_task(task_name):
     """Delete the specified Windows Scheduler task."""
     cmd = f'schtasks /DELETE /TN "{task_name}" /F'
-    logging.debug(f"Executing schtasks command: {cmd}")
+    logger.debug(f"Executing schtasks command: {cmd}")
     try:
         result = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
-        logging.debug(f"schtasks output: {result.stdout}")
+        logger.debug(f"schtasks output: {result.stdout}")
         return True
     except subprocess.CalledProcessError as e:
-        logging.error(f"schtasks failed: {e.stderr}")
+        logger.error(f"schtasks failed: {e.stderr}")
         return False
 
 def get_task_status(task_name):
     """Check if the task exists and is enabled."""
     cmd = f'schtasks /QUERY /TN "{task_name}" /FO CSV'
-    logging.debug(f"Executing schtasks command: {cmd}")
+    logger.debug(f"Executing schtasks command: {cmd}")
     try:
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
         if task_name in result.stdout:
             return "Enabled" if "Running" in result.stdout or "Ready" in result.stdout else "Disabled"
         return "Not Found"
     except subprocess.CalledProcessError as e:
-        logging.error(f"schtasks query failed: {e.stderr}")
+        logger.error(f"schtasks query failed: {e.stderr}")
         return "Not Found"
 
 # Entry point for the form
 def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID = 25
     """Create the GoCardless maintenance form with tabbed navigation."""
-    logging.debug("Creating GC Maint Form")
+    logger.debug("Creating GC Maint Form")
     form = tk.Toplevel(parent)
+    form.config(bg=config.master_bg)
     form.update_form = lambda: init_form()  # Allow setup to refresh Treeview
     win_id = 25
-    scaling_factor = parent.winfo_fpixels('1i') / 96
-    form.geometry(f"{int(800 * scaling_factor)}x{int(700 * scaling_factor)}")
+    form.geometry(f"{sc(800)}x{sc(700)}")
     form.transient(parent)
     form.attributes("-topmost", True)
     open_form_with_position(form, conn, cursor, win_id, "Manage GoCardless Configuration")
@@ -119,23 +119,28 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
     notebook = ttk.Notebook(form)
     notebook.pack(pady=10, expand=True, fill="both")
     
-    # Tab 1: Maintain GoCardless
-    tab1 = ttk.Frame(notebook)
-    notebook.add(tab1, text="GoCardless Access")
-    # Tab 2: Maintain Windows Scheduler
-    tab2 = ttk.Frame(notebook)
-    notebook.add(tab2, text="Windows Scheduler")    
-    # Tab 3: Testing GC Import (placeholder)
-    tab3 = ttk.Frame(notebook)
-    notebook.add(tab3, text="Test Rules / Match")
-    # Tab 4: Other Settings
-    tab4 = ttk.Frame(notebook)
-    notebook.add(tab4, text="  Other Settings   ")    
+    tabs = ttk.Style()
+    tabs.configure('TFrame', background=config.master_bg, font=config.ha_normal)
     
+    # Tab 1: Maintain GoCardless
+    tab1 = ttk.Frame(notebook, style='TFrame')
+    notebook.add(tab1, text="GoCardless Access")
+
+    # Tab 2: Maintain Windows Scheduler
+    tab2 = ttk.Frame(notebook, style='TFrame')
+    notebook.add(tab2, text="Windows Scheduler")  
+
+    # Tab 3: Testing GC Import (placeholder)
+    tab3 = ttk.Frame(notebook, style='TFrame')
+    notebook.add(tab3, text="Test Rules / Match")
+
+    # Tab 4: Other Settings
+    tab4 = ttk.Frame(notebook, style='TFrame')
+    notebook.add(tab4, text="  Other Settings   ")    
     
     # Treeview
     gctree = ttk.Treeview(tab1, columns=("Acc_ID", "Acc_Name", "Active", "Days", "Bank", "Status", "Setup"), show="headings", height=12)
-    gctree.place(x=int(20 * scaling_factor), y=int(20 * scaling_factor), width=int(760 * scaling_factor))
+    gctree.place(x=sc(20), y=sc(20), width=sc(760))
     gctree.heading("Acc_ID", text="Account ID")
     gctree.heading("Acc_Name", text="Account Name")
     gctree.heading("Active", text="Active")
@@ -143,18 +148,18 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
     gctree.heading("Bank", text="Bank Name")
     gctree.heading("Status", text="Link Status")
     gctree.heading("Setup", text="Setup")
-    gctree.column("Acc_ID", width=int(70 * scaling_factor), anchor="center")
-    gctree.column("Acc_Name", width=int(110 * scaling_factor))
-    gctree.column("Active", width=int(70 * scaling_factor), anchor="center")
-    gctree.column("Days", width=int(100 * scaling_factor), anchor="center")
-    gctree.column("Bank", width=int(150 * scaling_factor))
-    gctree.column("Status", width=int(100 * scaling_factor), anchor="center")
-    gctree.column("Setup", width=int(50 * scaling_factor), anchor="center")
+    gctree.column("Acc_ID", width=sc(70), anchor="center")
+    gctree.column("Acc_Name", width=sc(110))
+    gctree.column("Active", width=sc(70), anchor="center")
+    gctree.column("Days", width=sc(100), anchor="center")
+    gctree.column("Bank", width=sc(150))
+    gctree.column("Status", width=sc(100), anchor="center")
+    gctree.column("Setup", width=sc(50), anchor="center")
     
     # Treeview styling
     style = ttk.Style()
-    style.configure("Treeview", font=("Arial", 10))
-    style.configure("Treeview.Heading", font=("Arial", 11, "bold"))
+    style.configure("Treeview", font=(config.ha_normal))
+    style.configure("Treeview.Heading", font=(config.ha_head11))
     gctree.tag_configure("expiring", foreground="orange")
     gctree.tag_configure("expired", foreground="red")
     gctree.tag_configure("ready", background=COLORS["pale_green"])
@@ -231,11 +236,15 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
     def fetch_now():
         logger = logging.getLogger('HA.fetch_now')
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = os.path.join(get_config('LOG_DIR'), f"{timestamp}_fetch_transactions.log")
-        file_handler = logging.FileHandler(log_file)
-        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        if not acc_id_var.get():
+            acc_id = None
+        else:
+            acc_id = int(acc_id_var.get())
+        log_file = os.path.join(get_config('LOG_DIR'), f"{timestamp}_acc{acc_id}_fetch_trans.log")
+        file_handler = logger.FileHandler(log_file)
+        file_handler.setFormatter(logger.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         logger.addHandler(file_handler)
-        logger.setLevel(logging.DEBUG)        
+        logger.setLevel(logger.DEBUG)        
         
         try:
             if not acc_id_var.get():
@@ -278,27 +287,27 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
         logger = logging.getLogger()
         display_form = tk.Toplevel(parent_form)
         display_form.title(f"Transactions in json file: {json_path}")
-        dx = int(210 * scaling_factor)
-        dy = int(200 * scaling_factor)
-        display_form.geometry(f"{int(1600 * scaling_factor)}x{int(500 * scaling_factor)}+{dx}+{dy}")
+        dx = sc(210)
+        dy = sc(200)
+        display_form.geometry(f"{sc(1600)}x{sc(500)}+{dx}+{dy}")
         display_form.transient(parent_form)
         display_form.attributes("-topmost", True)
         
         columns = ["transaction_id", "status", "booking_date", "amount", "currency", "description"]
         tree = ttk.Treeview(display_form, columns=columns, show="headings", height=20)
-        tree.place(x=int(20 * scaling_factor), y=int(20 * scaling_factor), width=int(1560 * scaling_factor))
+        tree.place(x=sc(20), y=sc(20), width=sc(1560))
         tree.heading("transaction_id", text="Transaction ID")
         tree.heading("status", text="Status")
         tree.heading("booking_date", text="Booking Date")
         tree.heading("amount", text="Amount")
         tree.heading("currency", text="Currency")
         tree.heading("description", text="Description")
-        tree.column("transaction_id", width=int(680 * scaling_factor), anchor="w")
-        tree.column("status", width=int(100 * scaling_factor), anchor="center")
-        tree.column("booking_date", width=int(100 * scaling_factor), anchor="center")
-        tree.column("amount", width=int(100 * scaling_factor), anchor="center")
-        tree.column("currency", width=int(100 * scaling_factor), anchor="center")
-        tree.column("description", width=int(450 * scaling_factor), anchor="w")
+        tree.column("transaction_id", width=sc(680), anchor="w")
+        tree.column("status", width=sc(100), anchor="center")
+        tree.column("booking_date", width=sc(100), anchor="center")
+        tree.column("amount", width=sc(100), anchor="center")
+        tree.column("currency", width=sc(100), anchor="center")
+        tree.column("description", width=sc(450), anchor="w")
         
         scrollbar = tk.Scrollbar(display_form, orient="vertical", command=tree.yview)
         scrollbar.pack(side="right", fill="y")
@@ -323,21 +332,21 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
             logger.error(f"Error loading JSON: {str(e)}")
             tree.insert("", "end", values=[f"Error loading JSON: {str(e)}"] + [""] * (len(columns) - 1))
         
-        tk.Button(display_form, text="Close", width=15, command=display_form.destroy).place(x=int(650 * scaling_factor), y=int(450 * scaling_factor))
+        tk.Button(display_form, text="Close", width=15, command=display_form.destroy).place(x=sc(650), y=sc(450))
         
     def display_test_results(parent_form, results):
         logger = logging.getLogger()
         display_form = tk.Toplevel(parent_form)
         display_form.title("Test Rules Results")
-        dx = int(210 * scaling_factor)
-        dy = int(200 * scaling_factor)
-        display_form.geometry(f"{int(1600 * scaling_factor)}x{int(500 * scaling_factor)}+{dx}+{dy}")
+        dx = sc(210)
+        dy = sc(200)
+        display_form.geometry(f"{sc(1600)}x{sc(500)}+{dx}+{dy}")
         display_form.transient(parent_form)
         display_form.attributes("-topmost", True)
         
         columns = ["transaction_id", "status", "booking_date", "amount", "currency", "description", "category"]
         tree = ttk.Treeview(display_form, columns=columns, show="headings", height=20)
-        tree.place(x=int(20 * scaling_factor), y=int(20 * scaling_factor), width=int(1560 * scaling_factor))
+        tree.place(x=sc(20), y=sc(20), width=sc(1560))
         tree.heading("transaction_id", text="Transaction ID")
         tree.heading("status", text="Status")
         tree.heading("booking_date", text="Booking Date")
@@ -345,13 +354,13 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
         tree.heading("currency", text="Currency")
         tree.heading("description", text="Description")
         tree.heading("category", text="Category")
-        tree.column("transaction_id", width=int(580 * scaling_factor), anchor="w")
-        tree.column("status", width=int(100 * scaling_factor), anchor="center")
-        tree.column("booking_date", width=int(100 * scaling_factor), anchor="center")
-        tree.column("amount", width=int(100 * scaling_factor), anchor="center")
-        tree.column("currency", width=int(100 * scaling_factor), anchor="center")
-        tree.column("description", width=int(450 * scaling_factor), anchor="w")
-        tree.column("category", width=int(100 * scaling_factor), anchor="center")
+        tree.column("transaction_id", width=sc(580), anchor="w")
+        tree.column("status", width=sc(100), anchor="center")
+        tree.column("booking_date", width=sc(100), anchor="center")
+        tree.column("amount", width=sc(100), anchor="center")
+        tree.column("currency", width=sc(100), anchor="center")
+        tree.column("description", width=sc(450), anchor="w")
+        tree.column("category", width=sc(100), anchor="center")
         
         scrollbar = tk.Scrollbar(display_form, orient="vertical", command=tree.yview)
         scrollbar.pack(side="right", fill="y")
@@ -364,7 +373,7 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
             ))
         logger.debug("Displayed test rules results")
         
-        tk.Button(display_form, text="Close", width=15, command=display_form.destroy).place(x=int(650 * scaling_factor), y=int(450 * scaling_factor))
+        tk.Button(display_form, text="Close", width=15, command=display_form.destroy).place(x=sc(650), y=sc(450))
         
     def clear_fields():
         acc_id_var.set("")
@@ -419,17 +428,17 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
             messagebox.showerror("Error", f"Failed to save: {str(e)}", parent=form)
     
     def toggle_es():
-        logging.debug(f"is_enabled before toggle: {is_enabled.get()}")
+        logger.debug(f"is_enabled before toggle: {is_enabled.get()}")
         if is_enabled.get() :
             is_enabled.set(False)   # Clear checkbox
             es_box.config(image=unchecked_img)
         else:
             is_enabled.set(True)    # Set checkbox
             es_box.config(image=checked_img)
-        logging.debug(f"is_enabled after toggle: {is_enabled.get()}")
+        logger.debug(f"is_enabled after toggle: {is_enabled.get()}")
         
         test=resource_path("test")
-        logging.debug(f"resource_path: {test}")
+        logger.debug(f"resource_path: {test}")
     
     # Save and Delete buttons - Tab 2
     def save_schedule():                        # Tab 2
@@ -441,7 +450,7 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
         if time2 and not validate_time_format(time2):
             messagebox.showerror("Error", "Invalid Time 2 format. Use HH:MM AM/PM.")
             return
-        logging.debug(f"time1={time1}, time2={time2}")
+        logger.debug(f"time1={time1}, time2={time2}")
         if create_or_update_task(task_name, time1, time2, is_enabled.get()):
             messagebox.showinfo("Success", "Task scheduled successfully.")
         else:
@@ -474,13 +483,13 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
         accounts_combo['values'] = accounts
         if accounts:
             accounts_var.set(accounts[0])
-        logging.debug(f"Populated accounts combo: {accounts}")
+        #logger.debug(f"Populated accounts combo: {accounts}")
 
     def count_transaction_ids(data):
         """Recursively count objects with 'transactionId' key in JSON data."""
         count = 0
         if isinstance(data, dict):
-            if "transactionId" in data:
+            if "transactionId" in data or "internalTransactionId" in data:
                 count += 1
             for value in data.values():
                 count += count_transaction_ids(value)
@@ -489,7 +498,7 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
                 count += count_transaction_ids(item)
         return count
     
-    def populate_files_combo(cursor, accounts_var, files_var, scaling_factor):
+    def populate_files_combo(cursor, accounts_var, files_var):
         """Populate files combo with JSON files for the selected account."""
         if not accounts_var.get():
             files_var.set("")
@@ -512,15 +521,15 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
                             record_count = count_transaction_ids(data)
                         files.append(f"{filename} ({import_date.strftime('%Y-%m-%d %H:%M:%S')}, {record_count} records)")
                     except (ValueError, json.JSONDecodeError) as e:
-                        logging.error(f"Error processing {filename}: {e}")
+                        logger.error(f"Error processing {filename}: {e}")
                         continue
             files_var.set("")
             files_combo['values'] = sorted(files, reverse=True)  # Newest first
             if files:
                 files_var.set(files[0])
-            logging.debug(f"Populated files combo for Acc_ID {acc_id}: {files}")
+            #logger.debug(f"Populated files combo for Acc_ID {acc_id}: {files}")
         except OSError as e:
-            logging.error(f"Error accessing {bank_dir}: {e}")
+            logger.error(f"Error accessing {bank_dir}: {e}")
             files_combo['values'] = []
             files_var.set("")
 
@@ -537,19 +546,22 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
             # Create a new window to display JSON
             json_window = tk.Toplevel(form)
             json_window.title(f"JSON Content: {filename}")
-            json_window.geometry(f"{int(1000 * scaling_factor)}x{int(600 * scaling_factor)}+{int(400 * scaling_factor)}+{int(200 * scaling_factor)}")
+            json_window.geometry(f"{sc(1000)}x{sc(605)}+{sc(400)}+{sc(200)}")
             json_window.transient(form)  # Set as transient to parent form
             json_window.attributes("-topmost", True)  # Ensure on top
             json_window.focus_set()  # Set focus to window
             text_area = tk.Text(json_window, wrap="none", font=("Courier", 10))
             text_area.insert("1.0", json.dumps(data, indent=2))
             text_area.config(state="disabled")
-            text_area.pack(expand=True, fill="both", padx=10, pady=10)
-            tk.Button(json_window, text="Close", width=15, command=json_window.destroy).pack(pady=10)
-            logging.debug(f"Displayed JSON file: {filepath}")
+            text_area.place(x=sc(10), y=sc(10), height=sc(550), width=sc(960))
+            scrollbar = tk.Scrollbar(json_window, orient="vertical", command=text_area.yview)
+            scrollbar.place(x=sc(970), y=sc(10), height=sc(550))
+            text_area.configure(yscrollcommand=scrollbar.set)
+            tk.Button(json_window, text="Close", width=15, command=json_window.destroy).place(x=sc(450), y=sc(570))
+            logger.debug(f"Displayed JSON file: {filepath}")
         except (OSError, json.JSONDecodeError) as e:
             messagebox.showerror("Error", f"Failed to load JSON file: {e}")
-            logging.error(f"Failed to load {filepath}: {e}")
+            logger.error(f"Failed to load {filepath}: {e}")
 
     def test_rules_now(root):
         """Import the selected JSON file into the database."""
@@ -563,25 +575,34 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
             db_path = get_config('DB_PATH_TEST' if get_config('APP_ENV') == 'test' else 'DB_PATH')
             process_transactions(filepath, conn, acc_id)  # process JSON file
             messagebox.showinfo("Success", f"Imported {filename} successfully. \n See LOGS/app.log for details", parent=form)
-            logging.debug(f"Imported JSON file: {filepath} to {db_path}")
+            logger.debug(f"Imported JSON file: {filepath} to {db_path}")
         except (OSError, json.JSONDecodeError, sqlite3.Error) as e:
             messagebox.showerror("Error", f"Failed to import JSON file: {e}")
-            logging.error(f"Failed to import {filepath}: {e}")
-
+            logger.error(f"Failed to import {filepath}: {e}")
 
     # Save Settings button - Tab 4
     def save_settings():                        # Tab 4
         try:
             expiry_days = int(expiry_entry.get())
             log_days = int(log_days_entry.get())
-            if expiry_days < 0 or log_days < 0:
+            token_days = int(token_margin_entry.get())
+            req_days = int(req_valid_entry.get())
+            import_days =int(import_days_entry.get())
+            
+            if expiry_days < 0 or log_days < 0 or token_days < 0 or req_days < 0 or import_days < 0:
                 messagebox.showerror("Error", "Values must be non-negative.")
                 return
             cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ('EXPIRY_WARNING_DAYS', expiry_days))
             cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ('LOG_DAYS_TO_KEEP', log_days))
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ('TOKEN_MARGIN', token_days))
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ('REQUISITION_VALIDITY_DAYS', req_days))
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ('IMPORT_DAYS_TO_KEEP', import_days))
             cursor.commit()
             CONFIG['EXPIRY_WARNING_DAYS'] = expiry_days
             CONFIG['LOG_DAYS_TO_KEEP'] = log_days
+            CONFIG['TOKEN_MARGIN'] = token_days
+            CONFIG['REQUISITION_VALIDITY_DAYS'] = req_days
+            CONFIG['IMPORT_DAYS_TO_KEEP'] = import_days
             messagebox.showinfo("Success", "Settings updated successfully.")
         except ValueError:
             messagebox.showerror("Error", "Invalid number for settings.")
@@ -595,126 +616,153 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
     gctree.bind("<<TreeviewSelect>>", on_gctree_select)
     gctree.bind("<Double-1>", on_setup_click)
     
-    tk.Label(tab1, text="(Click on a row to edit that record)", anchor="w", font=("Arial", 9, "italic"), width=40).place(x=int(20 * scaling_factor), y=int(260 * scaling_factor))
-    tk.Label(tab1, text="(To link HA account to bank account - Double-click on 'Setup')", anchor="e", font=("Arial", 9, "italic"), width=50).place(x=int(430 * scaling_factor), y=int(260 * scaling_factor))
+    tk.Label(tab1, text="(Click on a row to edit that record)", anchor="w", bg=config.master_bg, font=(config.ha_note), width=40).place(x=sc(20), y=sc(260))
+    tk.Label(tab1, text="(To link HA account to bank account - Double-click on 'Setup')", anchor="e", bg=config.master_bg, font=(config.ha_note), width=50).place(x=sc(430), y=sc(260))
     
-    tk.Label(tab1, text="Account ID:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(300 * scaling_factor))
-    tk.Label(tab1, textvariable=acc_id_var, anchor="w", width=20).place(x=int(350 * scaling_factor), y=int(300 * scaling_factor))
+    tk.Label(tab1, text="Account ID:", anchor="e", bg=config.master_bg, font=(config.ha_normal), width=20).place(x=sc(150), y=sc(300))
+    tk.Label(tab1, textvariable=acc_id_var, anchor="w", bg=config.master_bg, font=(config.ha_normal), width=20).place(x=sc(350), y=sc(300))
     
-    tk.Label(tab1, text="Account Name:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(340 * scaling_factor))
-    tk.Label(tab1, textvariable=acc_name_var, anchor="w", width=20).place(x=int(350 * scaling_factor), y=int(340 * scaling_factor))
+    tk.Label(tab1, text="Account Name:", anchor="e", bg=config.master_bg, font=(config.ha_normal), width=20).place(x=sc(150), y=sc(340))
+    tk.Label(tab1, textvariable=acc_name_var, anchor="w", bg=config.master_bg, font=(config.ha_normal), width=20).place(x=sc(350), y=sc(340))
     
-    tk.Label(tab1, text="Account Active:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(380 * scaling_factor))
-    active_combo = ttk.Combobox(tab1, textvariable=active_var, values=["Yes", "No"], width=15, state="readonly")
-    active_combo.place(x=int(350 * scaling_factor), y=int(380 * scaling_factor))
+    tk.Label(tab1, text="Account Active:", anchor="e", bg=config.master_bg, font=(config.ha_normal), width=20).place(x=sc(150), y=sc(380))
+    active_combo = ttk.Combobox(tab1, textvariable=active_var, values=["Yes", "No"], font=(config.ha_normal), width=10, state="readonly")
+    active_combo.place(x=sc(320), y=sc(380))
     
-    tk.Label(tab1, text="Days to Fetch:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(420 * scaling_factor))
-    days_combo = ttk.Combobox(tab1, textvariable=days_var, values=days_values, width=15, state="readonly")
-    days_combo.place(x=int(350 * scaling_factor), y=int(420 * scaling_factor))
-    tk.Label(tab1, text="(max 30 to save)", anchor="w", font=("Arial", 9, "italic"), width=20).place(x=int(480 * scaling_factor), y=int(420 * scaling_factor))
+    tk.Label(tab1, text="Days to Fetch:", anchor="e", bg=config.master_bg, font=(config.ha_normal), width=20).place(x=sc(150), y=sc(420))
+    days_combo = ttk.Combobox(tab1, textvariable=days_var, values=days_values, font=(config.ha_normal), width=10, state="readonly")
+    days_combo.place(x=sc(320), y=sc(420))
+    tk.Label(tab1, text="(max 30 to save)", anchor="w", font=("Arial", 9, "italic"), bg=config.master_bg, width=20).place(x=sc(440), y=sc(420))
     
-    tk.Label(tab1, text="Bank Name:", anchor="e", width=20).place(x=int(180 * scaling_factor), y=int(460 * scaling_factor))
-    tk.Label(tab1, textvariable=bank_var, anchor="w", width=20).place(x=int(350 * scaling_factor), y=int(460 * scaling_factor))
+    tk.Label(tab1, text="Bank Name:", anchor="e", bg=config.master_bg, font=(config.ha_normal), width=20).place(x=sc(150), y=sc(460))
+    tk.Label(tab1, textvariable=bank_var, anchor="w", bg=config.master_bg, font=(config.ha_normal), width=20).place(x=sc(350), y=sc(460))
     
     # Fetch Now Button (initially disabled)
-    fetch_button = tk.Button(tab1, text="Fetch Now", width=20, state="disabled", command=lambda: fetch_now())
-    fetch_button.place(x=int(550 * scaling_factor), y=int(380 * scaling_factor))
+    fetch_button = tk.Button(tab1, text="Fetch Now", font=(config.ha_button), width=20, state="disabled", command=lambda: fetch_now())
+    fetch_button.place(x=sc(550), y=sc(380))
 
-    ####### Manage 'pending' match string - move to rules - somewhere? ###################
-    
-    test_rules_button = tk.Button(tab1, text="Manage 'pending' Match Strings", width=35, command=lambda: create_mrules_form(form, conn, cursor))
-    test_rules_button.place(x=int(80 * scaling_factor), y=int(530 * scaling_factor))
-    
-    ####### Manage 'pending' match string - move to rules - somewhere? ###################
-    
     # Save and Close Buttons
-    tk.Button(tab1, text="Save", width=15, command=lambda: save_account()).place(
-        x=int(350 * scaling_factor), y=int(600 * scaling_factor))
-    tk.Button(tab1, text="Close", width=15, command=lambda: close_gocardless_form(form, conn, cursor, win_id, parent)).place(x=int(680 * scaling_factor), y=int(600 * scaling_factor))
+    save_btn = tk.Button(tab1, text="Save", font=(config.ha_button), width=15, command=lambda: save_account())
+    save_btn.place(x=sc(150), y=sc(600))
+    close_btn = tk.Button(tab1, text="Close", font=(config.ha_button), bg=COLORS["exit_but_bg"], width=15, command=lambda: close_gocardless_form(form, conn, cursor, win_id, parent))
+    close_btn.place(x=sc(500), y=sc(600))
     
     ###################################################################
     # Tab 2 Layout - Task Scheduler settings
     task_name = "FetchBankTransTask"
-    tk.Label(tab2, text="Windows Scheduler can be set to automatically fetch recent", font=("Arial", 11)).place(x=int(200 * scaling_factor), y=int(30 * scaling_factor))
-    tk.Label(tab2, text="    transactions from your banks, up to twice per day.    ", font=("Arial", 11)).place(x=int(200 * scaling_factor), y=int(50 * scaling_factor))
+    tk.Label(tab2, text="Windows Scheduler can be set to automatically fetch recent", bg=config.master_bg, font=(config.ha_button)).place(x=sc(200), y=sc(30))
+    tk.Label(tab2, text="    transactions from your banks, up to twice per day.    ", bg=config.master_bg, font=(config.ha_button)).place(x=sc(200), y=sc(50))
 
     # Enable/Disable checkbox
     is_enabled = tk.BooleanVar(value=get_task_status(task_name) != "Not Found")
-    #tk.Checkbutton(tab2, text="Enable Scheduler", variable=is_enabled, font=("Arial", 10)).place(x=int(300 * scaling_factor), y=int(100 * scaling_factor))
+    #tk.Checkbutton(tab2, text="Enable Scheduler", variable=is_enabled, font=("Arial", 10)).place(x=sc(300), y=sc(100))
 
-    unchecked_img = tk.PhotoImage(file=resource_path("icons/unchecked_16.png")).zoom(int(scaling_factor))
-    checked_img = tk.PhotoImage(file=resource_path("icons/checked_16.png")).zoom(int(scaling_factor))
+    unchecked_img = tk.PhotoImage(file=resource_path("icons/unchecked_16.png")).zoom(sc(1))
+    checked_img = tk.PhotoImage(file=resource_path("icons/checked_16.png")).zoom(sc(1))
 
-    tk.Label(tab2, text="Enable Scheduler", anchor=tk.W, width=int(14 * scaling_factor), font=("Arial", 11), 
-             bg=config.master_bg, fg=COLORS["black"]).place(x=int(330 * scaling_factor), y=int(100 * scaling_factor))
+    tk.Label(tab2, text="Enable Scheduler", anchor=tk.W, width=sc(14), font=("Arial", 11), 
+            bg=config.master_bg, fg=COLORS["black"]).place(x=sc(330), y=sc(100))
     if is_enabled:
         image=checked_img
     else:
         image=unchecked_img
     es_box=tk.Button(tab2, image=image, bg=config.master_bg, command=toggle_es)
-    es_box.place(x=int(300 * scaling_factor), y=int(100 * scaling_factor))
+    es_box.place(x=sc(300), y=sc(100))
     
     # Time 1 input
-    tk.Label(tab2, text="Run Time 1 (HH:MM AM/PM):", font=("Arial", 10)).place(x=int(200 * scaling_factor), y=int(160 * scaling_factor))
+    tk.Label(tab2, text="Run Time 1 (HH:MM AM/PM):", bg=config.master_bg, font=("Arial", 10)).place(x=sc(200), y=sc(160))
     time1_entry = tk.Entry(tab2, width=10, font=("Arial", 10))
     time1_entry.insert(0, "06:30 AM")
-    time1_entry.place(x=int(400 * scaling_factor), y=int(160 * scaling_factor))
+    time1_entry.place(x=sc(400), y=sc(160))
 
     # Time 2 input (optional)
-    tk.Label(tab2, text="Run Time 2 (HH:MM AM/PM):", font=("Arial", 10)).place(x=int(200 * scaling_factor), y=int(220 * scaling_factor))
+    tk.Label(tab2, text="Run Time 2 (HH:MM AM/PM):", bg=config.master_bg, font=("Arial", 10)).place(x=sc(200), y=sc(220))
     time2_entry = tk.Entry(tab2, width=10, font=("Arial", 10))
     time2_entry.insert(0, "")
-    time2_entry.place(x=int(400 * scaling_factor), y=int(220 * scaling_factor))
-    tk.Label(tab2, text="(optional)", font=("Arial", 10)).place(x=int(500 * scaling_factor), y=int(220 * scaling_factor))
+    time2_entry.place(x=sc(400), y=sc(220))
+    tk.Label(tab2, text="(optional)", bg=config.master_bg, font=("Arial", 10)).place(x=sc(500), y=sc(220))
     
-    tk.Button(tab2, text="Save Schedule", width=20,font=("Arial", 10), command=save_schedule).place(x=int(200 * scaling_factor), y=int(300 * scaling_factor))
-    tk.Button(tab2, text="Delete Task", width=20,font=("Arial", 10), command=delete_schedule).place(x=int(400 * scaling_factor), y=int(300 * scaling_factor))
+    tk.Button(tab2, text="Save Schedule", width=20, font=(config.ha_button), command=save_schedule).place(x=sc(200), y=sc(300))
+    tk.Button(tab2, text="Delete Task", width=20, bg=COLORS["del_but_bg"], font=(config.ha_button), command=delete_schedule).place(x=sc(500), y=sc(300))
     
-    tk.Button(tab2, text="Close - without making changes", width=30, font=("Arial", 10),
-              command=lambda: close_gocardless_form(form, conn, cursor, win_id, parent)).place(x=int(500 * scaling_factor), y=int(500 * scaling_factor))
+    tk.Button(tab2, text="Close - without making changes", bg=COLORS["exit_but_bg"], width=30, font=(config.ha_button),
+            command=lambda: close_gocardless_form(form, conn, cursor, win_id, parent)).place(x=sc(500), y=sc(500))
     
     # Tab 3 Layout - Test Rules and Matching
     ###################################################################
     # Populate accounts combo
-    tk.Label(tab3, text="Choose Account:", anchor="e", width=15).place(x=int(100 * scaling_factor), y=int(100 * scaling_factor))
+    tk.Label(tab3, text="Choose Account:", anchor="e", bg=config.master_bg, font=(config.ha_normal), width=15).place(x=sc(50), y=sc(100))
     accounts_combo = ttk.Combobox(tab3, textvariable=accounts_var, width=50, state="readonly")
-    accounts_combo.place(x=int(260 * scaling_factor), y=int(100 * scaling_factor))
+    accounts_combo.place(x=sc(200), y=sc(100))
     
     populate_accounts_combo(cursor, accounts_var, accounts_combo)
     
     # Populate files combo when account changes
     def on_account_select(event):
-        populate_files_combo(cursor, accounts_var, files_var, scaling_factor)
+        populate_files_combo(cursor, accounts_var, files_var)
     accounts_combo.bind("<<ComboboxSelected>>", on_account_select)
 
-    tk.Label(tab3, text="Choose File Name:", anchor="e", width=15).place(x=int(100 * scaling_factor), y=int(175 * scaling_factor))
-    files_combo = ttk.Combobox(tab3, textvariable=files_var, width=60, state="readonly")
-    files_combo.place(x=int(260 * scaling_factor), y=int(175 * scaling_factor))
+    tk.Label(tab3, text="Choose File Name:", bg=config.master_bg, font=(config.ha_normal), anchor="e", width=15).place(x=sc(50), y=sc(175))
+    files_combo = ttk.Combobox(tab3, textvariable=files_var, width=70, state="readonly")
+    files_combo.place(x=sc(200), y=sc(175))
 
-    show_button = tk.Button(tab3, text="Show JSON file", width=25, command=lambda: show_now())
-    show_button.place(x=int(300 * scaling_factor), y=int(250 * scaling_factor))
+    show_button = tk.Button(tab3, text="Show JSON file", font=config.ha_button, width=25, command=lambda: show_now())
+    show_button.place(x=sc(300), y=sc(250))
 
-    test_import_button = tk.Button(tab3, text="Import JSON file", width=25, command=lambda: test_rules_now(parent))
-    test_import_button.place(x=int(300 * scaling_factor), y=int(300 * scaling_factor))
+    test_import_button = tk.Button(tab3, text="Import JSON file", font=config.ha_button, width=25, command=lambda: test_rules_now(parent))
+    test_import_button.place(x=sc(300), y=sc(300))
 
-    tk.Button(tab3, text="Close", width=15, 
-            command=lambda: close_gocardless_form(form, conn, cursor, win_id, parent)).place(x=int(330 * scaling_factor), y=int(380 * scaling_factor))
+    tk.Button(tab3, text="Close", bg=COLORS["exit_but_bg"], font=config.ha_button, width=15, 
+            command=lambda: close_gocardless_form(form, conn, cursor, win_id, parent)).place(x=sc(530), y=sc(530))
+    
+    # Manage 'pending' match string 
+    test_rules_button = tk.Button(tab3, text="Manage 'pending' Match Strings", font=(config.ha_button), width=35, command=lambda: create_mrules_form(form, conn, cursor))
+    test_rules_button.place(x=sc(80), y=sc(530))
     
     ###################################################################
     # Tab 4 Layout - 
+    label_x = 100
+    entry_x = 280
+    notes_x = 350
+    row_y   = 100
+    
     # Expiry Warning Days
-    tk.Label(tab4, text="Expiry Warning Days:").place(x=int(250 * scaling_factor), y=int(100 * scaling_factor))
-    expiry_entry = tk.Entry(tab4, width=10)
+    tk.Label(tab4, text="Expiry Warning Days:", anchor="e", bg=config.master_bg, font=(config.ha_normal)).place(x=sc(label_x), y=sc(row_y))
+    expiry_entry = tk.Entry(tab4, font=(config.ha_normal), width=5)
     expiry_entry.insert(0, str(get_config('EXPIRY_WARNING_DAYS')))
-    expiry_entry.place(x=int(400 * scaling_factor), y=int(100 * scaling_factor))
+    expiry_entry.place(x=sc(entry_x), y=sc(row_y))
+    tk.Label(tab4, text="Warn me before bank account access expires (default 10)", bg=config.master_bg, font=(config.ha_note)).place(x=sc(notes_x), y=sc(row_y))
 
     # Log Days to Keep
-    tk.Label(tab4, text="Log Days to Keep:").place(x=int(250 * scaling_factor), y=int(200 * scaling_factor))
-    log_days_entry = tk.Entry(tab4, width=10)
+    tk.Label(tab4, text="Log Days to Keep:", anchor="e", bg=config.master_bg, font=(config.ha_normal)).place(x=sc(label_x), y=sc(row_y + 50))
+    log_days_entry = tk.Entry(tab4, font=(config.ha_normal), width=5)
     log_days_entry.insert(0, str(get_config('LOG_DAYS_TO_KEEP')))
-    log_days_entry.place(x=int(400 * scaling_factor), y=int(200 * scaling_factor))
+    log_days_entry.place(x=sc(entry_x), y=sc(row_y + 50))
+    tk.Label(tab4, text="Delete log files older than this (default 10)", bg=config.master_bg, font=(config.ha_note)).place(x=sc(notes_x), y=sc(row_y + 50))
 
-    tk.Button(tab4, text="Save Settings", width=20, command=save_settings).place(x=int(300 * scaling_factor), y=int(300 * scaling_factor))
+    # Log Days to Keep
+    tk.Label(tab4, text="Token Margin:", anchor="e", bg=config.master_bg, font=(config.ha_normal)).place(x=sc(label_x), y=sc(row_y + 100))
+    token_margin_entry = tk.Entry(tab4, font=(config.ha_normal), width=5)
+    token_margin_entry.insert(0, str(get_config('TOKEN_MARGIN')))
+    token_margin_entry.place(x=sc(entry_x), y=sc(row_y + 100))
+    tk.Label(tab4, text="DO NOT CHANGE - seconds before new bank token is used (60)", bg=config.master_bg, font=(config.ha_note)).place(x=sc(notes_x), y=sc(row_y + 100))
+
+    # Log Days to Keep
+    tk.Label(tab4, text="Requisition Validity Days:", anchor="e", bg=config.master_bg, font=(config.ha_normal)).place(x=sc(label_x), y=sc(row_y + 150))
+    req_valid_entry = tk.Entry(tab4, font=(config.ha_normal), width=5)
+    req_valid_entry.insert(0, str(get_config('REQUISITION_VALIDITY_DAYS')))
+    req_valid_entry.place(x=sc(entry_x), y=sc(row_y + 150))
+    tk.Label(tab4, text="Max 90 - Request period for bank account access (default 90)", bg=config.master_bg, font=(config.ha_note)).place(x=sc(notes_x), y=sc(row_y + 150))
+
+    # Log Days to Keep
+    tk.Label(tab4, text="Import Days to Keep:", anchor="e", bg=config.master_bg, font=(config.ha_normal)).place(x=sc(label_x), y=sc(row_y + 200))
+    import_days_entry = tk.Entry(tab4, font=(config.ha_normal), width=5)
+    import_days_entry.insert(0, str(get_config('IMPORT_DAYS_TO_KEEP')))
+    import_days_entry.place(x=sc(entry_x), y=sc(row_y + 200))
+    tk.Label(tab4, text="Delete older import bank transaction log files (default 10)", bg=config.master_bg, font=(config.ha_note)).place(x=sc(notes_x), y=sc(row_y + 200))
+
+
+    tk.Button(tab4, text="Save Settings", font=(config.ha_button), width=25, command=save_settings).place(x=sc(300), y=sc(400))
     
     init_form()
     
@@ -724,17 +772,16 @@ def create_gocardless_maint_form(parent, conn, cursor):                 # Win_ID
 def create_mrules_form(parent, conn, cursor):
     form = tk.Toplevel(parent)
     form.title("Manage Description Rules")
-    scaling_factor = parent.winfo_fpixels('1i') / 96
-    form.geometry(f"{int(600 * scaling_factor)}x{int(400 * scaling_factor)}")
+    form.geometry(f"{sc(600)}x{sc(400)}")
     form.transient(parent)
     form.attributes("-topmost", True)
     
     tree = ttk.Treeview(form, columns=("Pattern", "Category"), show="headings", height=10)
-    tree.place(x=int(20 * scaling_factor), y=int(20 * scaling_factor), width=int(560 * scaling_factor))
+    tree.place(x=sc(20), y=sc(20), width=sc(560))
     tree.heading("Pattern", text="Pattern")
     tree.heading("Category", text="Category")
-    tree.column("Pattern", width=int(300 * scaling_factor))
-    tree.column("Category", width=int(200 * scaling_factor))
+    tree.column("Pattern", width=sc(300))
+    tree.column("Category", width=sc(200))
     
     style = ttk.Style()
     style.configure("Treeview", font=("Arial", 10))
@@ -743,11 +790,11 @@ def create_mrules_form(parent, conn, cursor):
     pattern_var = tk.StringVar()
     category_var = tk.StringVar()
     
-    tk.Label(form, text="Pattern:", anchor="e", width=15).place(x=int(20 * scaling_factor), y=int(260 * scaling_factor))
-    tk.Entry(form, textvariable=pattern_var, width=30).place(x=int(150 * scaling_factor), y=int(260 * scaling_factor))
+    tk.Label(form, text="Pattern:", anchor="e", width=15).place(x=sc(20), y=sc(260))
+    tk.Entry(form, textvariable=pattern_var, width=30).place(x=sc(150), y=sc(260))
     
-    tk.Label(form, text="Category:", anchor="e", width=15).place(x=int(20 * scaling_factor), y=int(290 * scaling_factor))
-    tk.Entry(form, textvariable=category_var, width=30).place(x=int(150 * scaling_factor), y=int(290 * scaling_factor))
+    tk.Label(form, text="Category:", anchor="e", width=15).place(x=sc(20), y=sc(290))
+    tk.Entry(form, textvariable=category_var, width=30).place(x=sc(150), y=sc(290))
     
     def load_rules():
         tree.delete(*tree.get_children())
@@ -777,9 +824,9 @@ def create_mrules_form(parent, conn, cursor):
         conn.commit()
         load_rules()
     
-    tk.Button(form, text="Add Rule", width=15, command=add_rule).place(x=int(150 * scaling_factor), y=int(320 * scaling_factor))
-    tk.Button(form, text="Delete Rule", width=15, command=delete_rule).place(x=int(300 * scaling_factor), y=int(320 * scaling_factor))
-    tk.Button(form, text="Close", width=15, command=form.destroy).place(x=int(450 * scaling_factor), y=int(320 * scaling_factor))
+    tk.Button(form, text="Add Rule", width=15, command=add_rule).place(x=sc(150), y=sc(320))
+    tk.Button(form, text="Delete Rule", width=15, command=delete_rule).place(x=sc(300), y=sc(320))
+    tk.Button(form, text="Close", width=15, command=form.destroy).place(x=sc(450), y=sc(320))
     
     load_rules()
     form.wait_window()
@@ -807,8 +854,6 @@ def check_requisition_status(conn, requisition_id, parent, progress_dialog=None)
 
 def setup_gc_requisition(conn, acc_id, parent, form):
     logger = logging.getLogger('HA.setup_gc_requisition')
-    # Setup Scaling
-    scaling_factor = form.winfo_fpixels('1i') / 96
 
     cur = conn.cursor()
     cur.execute("""
@@ -843,7 +888,7 @@ def setup_gc_requisition(conn, acc_id, parent, form):
         dialog.title("Select Bank")
         dialog.transient(parent)
         dialog.attributes("-topmost", True)
-        center_window(dialog, int(400 * scaling_factor), int(150 * scaling_factor))
+        center_window(dialog, sc(400), sc(150))
         tk.Label(dialog, text="Select GoCardless Bank Name:", font=("Arial", 10)).pack(pady=5)
         combo = ttk.Combobox(dialog, textvariable=selected, font=("Arial", 10), values=inst_names, width=50)
         combo.pack(pady=5)
@@ -873,7 +918,7 @@ def setup_gc_requisition(conn, acc_id, parent, form):
     auth_dialog.title("Authorize Bank Account")
     auth_dialog.transient(parent)
     auth_dialog.attributes("-topmost", True)
-    center_window(auth_dialog, int(400 * scaling_factor), int(200 * scaling_factor))
+    center_window(auth_dialog, sc(400), sc(200))
     tk.Label(auth_dialog, text=f"Please authorize {institution_name} in your browser:", font=("Arial", 10), wraplength=400).pack(pady=5)
     link_entry = tk.Entry(auth_dialog, font=("Arial", 10), width=50)
     link_entry.insert(0, data['link'])
@@ -882,7 +927,7 @@ def setup_gc_requisition(conn, acc_id, parent, form):
     tk.Button(auth_dialog, text="Copy Link", font=("Arial", 10), command=lambda: parent.clipboard_clear() or parent.clipboard_append(data['link'])).pack(pady=5)
     tk.Button(auth_dialog, text="Open in Browser", font=("Arial", 10), command=lambda: webbrowser.open(data['link'])).pack(pady=5)
     tk.Label(auth_dialog, text="Waiting for authorization...", font=("Arial", 10)).pack(pady=5)
-    progress = ttk.Progressbar(auth_dialog, mode="indeterminate", length=int(300 * scaling_factor))
+    progress = ttk.Progressbar(auth_dialog, mode="indeterminate", length=sc(300))
     progress.pack(pady=5)
     progress.start(10)
     
@@ -923,57 +968,98 @@ def setup_gc_requisition(conn, acc_id, parent, form):
     form.after(0, lambda: poll_status(60))
 
 def get_access_token(conn):
-    logger = logging.getLogger('HA.get_access_token')
+    """
+    Retrieve or refresh a GoCardless access token from the GC_Admin table.
+    If the refresh token is invalid (401), clear it and generate a new token.
+    
+    Args:
+        conn: SQLite connection object
+    Returns:
+        str: Valid access token
+    Raises:
+        ValueError: If no secrets are found or token generation fails
+    """
     logger.debug("Getting access token")
     
     cur = conn.cursor()
     cur.execute("SELECT Secret_ID, Secret_Key, Access_Token, Refresh_Token, Access_Expires, Refresh_Expires FROM GC_Admin")
     row = cur.fetchone()
     if not row:
-        raise ValueError("No GoCardless secrets found in GC_Admin table.")
+        logger.error("No GoCardless secrets found in GC_Admin table")
+        raise ValueError("No GoCardless secrets found in GC_Admin table")
+    
     admin = dict(zip(['secret_id', 'secret_key', 'access', 'refresh', 'access_expires', 'refresh_expires'], row))
     now = time.time()
     
+    # Return existing access token if valid
     if admin['access'] and admin['access_expires'] and now < admin['access_expires']:
+        logger.debug("Returning valid access token")
         return admin['access']
     
+    # Attempt to refresh or generate new token
+    new_data = None
     if admin['refresh'] and admin['refresh_expires'] and now < admin['refresh_expires']:
         logger.debug("Refreshing access token...")
         response = requests.post(f"{get_config('API_BASE_URL')}/token/refresh/", json={"refresh": admin['refresh']})
-        if response.status_code != 200:
+        
+        if response.status_code == 401:
+            logger.debug("Refresh token invalid (401), clearing token data")
+            cur.execute("""
+                UPDATE GC_Admin 
+                SET Access_Token = '', Refresh_Token = '', Access_Expires = '', Refresh_Expires = ''
+            """)
+            conn.commit()
+            logger.debug("Cleared invalid token data from GC_Admin")
+        elif response.status_code == 200:
+            try:
+                token_data = response.json()
+                new_data = {
+                    'secret_id': admin['secret_id'],
+                    'secret_key': admin['secret_key'],
+                    'access': token_data['access'],
+                    'refresh': token_data.get('refresh', admin['refresh']),
+                    'access_expires': now + token_data['access_expires'] - get_config('TOKEN_MARGIN'),
+                    'refresh_expires': now + token_data.get('refresh_expires', admin['refresh_expires']) - get_config('TOKEN_MARGIN')
+                }
+                logger.debug("Successfully refreshed access token")
+            except ValueError as e:
+                logger.error(f"Failed to parse refresh response: {response.text} ({e})")
+                raise ValueError(f"Failed to parse refresh response: {response.text}")
+        else:
             logger.error(f"Failed to refresh token: {response.status_code} {response.text}")
             raise ValueError(f"Failed to refresh token: {response.status_code} {response.text}")
-        token_data = response.json()
-        new_data = {
-            'secret_id': admin['secret_id'],
-            'secret_key': admin['secret_key'],
-            'access': token_data['access'],
-            'refresh': token_data.get('refresh', admin['refresh']),
-            'access_expires': now + token_data['access_expires'] - get_config('TOKEN_MARGIN'),
-            'refresh_expires': now + token_data.get('refresh_expires', admin['refresh_expires']) - get_config('TOKEN_MARGIN')
-        }
-    else:
+    
+    # If refresh failed (e.g., 401) or no valid refresh token, generate new token
+    if not new_data:
         if not admin['secret_id'] or not admin['secret_key']:
-            logger.debug("Invalid or missing Secret_ID/Secret_Key in GC_Admin.")
-            raise ValueError("Invalid or missing Secret_ID/Secret_Key in GC_Admin.")
+            logger.error("Invalid or missing Secret_ID/Secret_Key in GC_Admin")
+            raise ValueError("Invalid or missing Secret_ID/Secret_Key in GC_Admin")
+        
         logger.debug("Generating new access token...")
         response = requests.post(
             f"{get_config('API_BASE_URL')}/token/new/",
             json={"secret_id": admin['secret_id'], "secret_key": admin['secret_key']}
         )
         if response.status_code != 200:
-            logger.debug(f"Failed to generate token: {response.status_code} {response.text}")
+            logger.error(f"Failed to generate token: {response.status_code} {response.text}")
             raise ValueError(f"Failed to generate token: {response.status_code} {response.text}")
-        token_data = response.json()
-        new_data = {
-            'secret_id': admin['secret_id'],
-            'secret_key': admin['secret_key'],
-            'access': token_data['access'],
-            'refresh': token_data['refresh'],
-            'access_expires': now + token_data['access_expires'] - get_config('TOKEN_MARGIN'),
-            'refresh_expires': now + token_data['refresh_expires'] - get_config('TOKEN_MARGIN')
-        }
+        
+        try:
+            token_data = response.json()
+            new_data = {
+                'secret_id': admin['secret_id'],
+                'secret_key': admin['secret_key'],
+                'access': token_data['access'],
+                'refresh': token_data['refresh'],
+                'access_expires': now + token_data['access_expires'] - get_config('TOKEN_MARGIN'),
+                'refresh_expires': now + token_data['refresh_expires'] - get_config('TOKEN_MARGIN')
+            }
+            logger.debug("Successfully generated new access token")
+        except ValueError as e:
+            logger.error(f"Failed to parse new token response: {response.text} ({e})")
+            raise ValueError(f"Failed to parse new token response: {response.text}")
     
+    # Update or insert token data into GC_Admin
     cur.execute("SELECT COUNT(*) FROM GC_Admin")
     exists = cur.fetchone()[0] > 0
     if exists:
@@ -981,16 +1067,18 @@ def get_access_token(conn):
             UPDATE GC_Admin 
             SET Access_Token = ?, Refresh_Token = ?, Access_Expires = ?, Refresh_Expires = ?
         """, (new_data['access'], new_data['refresh'], new_data['access_expires'], new_data['refresh_expires']))
-        logger.debug("Updated GC_Admin record")
+        logger.debug("Updated GC_Admin record with new token data")
     else:
         cur.execute("""
             INSERT INTO GC_Admin (Secret_ID, Secret_Key, Access_Token, Refresh_Token, Access_Expires, Refresh_Expires)
             VALUES (?, ?, ?, ?, ?, ?)
         """, (new_data['secret_id'], new_data['secret_key'], new_data['access'], new_data['refresh'],
             new_data['access_expires'], new_data['refresh_expires']))
-        logger.debug("Inserted new GC_Admin record")
+        logger.debug("Inserted new GC_Admin record with token data")
+    
     conn.commit()
     return new_data['access']
+
 
 def fetch_transactions(access_token, requisition_id, output_file, fetch_days, conn, acc_id):
     logger = logging.getLogger('HA.fetch_transactions')

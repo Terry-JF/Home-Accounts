@@ -27,9 +27,8 @@ month_names = {
 def create_summary_form(parent, conn, cursor):                          # Win_ID = 4 
     form = tk.Toplevel(parent)
     win_id = 4
-    scaling_factor = parent.winfo_fpixels('1i') / 96  # Get scaling factor (e.g., 2.0 for 200% scaling)
     open_form_with_position(form, conn, cursor, win_id, "Summary")
-    form.geometry(f"{int(1675 * scaling_factor)}x{int(1020 * scaling_factor)}")  # Adjust size
+    form.geometry(f"{sc(1675)}x{sc(1020)}")  # Adjust size
     #form.geometry("1675x1020")
     form.resizable(False, False)
     form.configure(bg=config.master_bg)
@@ -42,46 +41,44 @@ def create_summary_form(parent, conn, cursor):                          # Win_ID
     is_expanded = tk.BooleanVar(value=False)  # Track expansion state
 
     # Year Selection
-    tk.Label(form, text="Year:", font=("Arial", 11), bg=config.master_bg).place(x=int(20 * scaling_factor), y=int(20 * scaling_factor))
+    tk.Label(form, text="Year:", font=(config.ha_button), bg=config.master_bg).place(x=sc(20), y=sc(20))
     year_combo = ttk.Combobox(  form, textvariable=selected_year, values=fetch_years(cursor), 
-                                font=("Arial", 11), width=6, state="readonly")
-    year_combo.place(x=int(60 * scaling_factor), y=int(20 * scaling_factor))
+                                font=(config.ha_button), width=6, state="readonly")
+    year_combo.place(x=sc(60), y=sc(20))
     year_combo.bind("<<ComboboxSelected>>", lambda e: refresh_needed.set(True))
 
     # Treeview
-    columns = ("PID/CID", "BFWD", "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC", "TOTALS", "AVG/Month")
-    tree = ttk.Treeview(form, columns=columns, show="headings", height=int(40 * scaling_factor), selectmode="browse")
-    tree.place(x=int(20 * scaling_factor), y=int(100 * scaling_factor), width=int(1635 * scaling_factor), height=int(890 * scaling_factor))
-    tree.tag_configure("parent", background=config.master_bg, font=("Arial", 10))  # Arial 10 for parent rows
-    tree.tag_configure("child", font=("Arial", 10))  # Arial 10 for child rows
+    columns = ("Category", "Bfwd", "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC", "TOTALS", "AVG/Month")
+    tree = ttk.Treeview(form, columns=columns, show="headings", height=sc(40), selectmode="browse")
+    tree.place(x=sc(20), y=sc(100), width=sc(1635), height=sc(890))
+    tree.tag_configure("parent", background=COLORS["act_but_bg"], font=(config.ha_button))  # Arial 11 for parent rows
+    tree.tag_configure("child", font=(config.ha_normal))  # Arial 10 for child rows
 
-    widths = [int(30 * scaling_factor), int(150 * scaling_factor), int(90 * scaling_factor)] + [int(90 * scaling_factor)] * 12 + [int(100 * scaling_factor), int(100 * scaling_factor)]
+    widths = [sc(200)] + [sc(85)] * 13 + [sc(100), sc(100)]
     for col, width in zip(columns, widths):
         tree.heading(col, text=col, anchor="center")
         tree.column(col, width=width, anchor="e")
-    tree.column("PID/CID", width=int(150 * scaling_factor), anchor="w")
-    tree.column("#0", width=int(25 * scaling_factor), anchor="center")
+    tree.column("Category", anchor="w")
+    tree.column("#0", width=sc(5), anchor="center")
 
     # Buttons
-    expand_button = tk.Button(  form, text="Expand All", font=("Arial", 10), bg="white",
-                                command=lambda: toggle_treeview())
-    expand_button.place(x=int(20 * scaling_factor), y=int(60 * scaling_factor), width=int(100 * scaling_factor))
+    expand_button = tk.Button(  form, text="Expand All", width=20, font=(config.ha_button), command=lambda: toggle_treeview())
+    expand_button.place(x=sc(20), y=sc(60))
     
-    month_buttons_x = int(308 * scaling_factor)
+    month_buttons_x = sc(325)
     for i, month in enumerate(["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]):
-        tk.Button(  form, text=month, font=("Arial", 10), bg=COLORS["pale_green"],
-                    command=lambda m=i+1: show_monthly_focus(m)).place(x=month_buttons_x + i*int(95 * scaling_factor), y=int(60 * scaling_factor), width=int(90 * scaling_factor))
+        tk.Button(form, text=month, font=(config.ha_normal), bg=COLORS["act_but_bg"],
+                    command=lambda m=i+1: show_monthly_focus(m)).place(x=month_buttons_x + i * sc(93), y=sc(60), width=sc(85))
 
-    drill_down_button = tk.Button(  form, text="Drill Down", font=("Arial", 10), bg="white",
-                                    command=lambda: show_drill_down(), state="disabled")
-    drill_down_button.place(x=int(1500 * scaling_factor), y=int(20 * scaling_factor), width=int(100 * scaling_factor))
+    drill_down_button = tk.Button(  form, text="Drill Down", width=20, font=(config.ha_button), command=lambda: show_drill_down(), state="disabled")
+    drill_down_button.place(x=sc(1480), y=sc(20))
 
-    tk.Button(  form, text="Close", font=("Arial", 10), bg="white",
-                command=lambda: close_form_with_position(form, conn, cursor, win_id)).place(x=int(1500 * scaling_factor), y=int(60 * scaling_factor), width=int(100 * scaling_factor))
+    tk.Button(form, text="Close", width=20, font=(config.ha_button), bg=COLORS["exit_but_bg"],
+                command=lambda: close_form_with_position(form, conn, cursor, win_id)).place(x=sc(1480), y=sc(60))
 
     # User guide
-    user_guide=tk.Label(form, text="(double-click any parent row to open/close it)", font=("Arial", 9, 'italic'), background=config.master_bg)
-    user_guide.place(x=int(20 * scaling_factor), y=int(995 * scaling_factor))
+    user_guide=tk.Label(form, text="(double-click a parent row to open/close that category)", font=(config.ha_note), background=config.master_bg)
+    user_guide.place(x=sc(20), y=sc(995))
 
     def toggle_treeview():
         if is_expanded.get():
@@ -169,7 +166,7 @@ def create_summary_form(parent, conn, cursor):                          # Win_ID
 
         dd_form = tk.Toplevel(form)
         open_form_with_position(dd_form, conn, cursor, 19, "Transactions making up this row of the Summary")
-        dd_form.geometry(f"{int(460 * scaling_factor)}x{int(935 * scaling_factor)}")
+        dd_form.geometry(f"{sc(600)}x{sc(935)}")
         dd_form.resizable(False, False)
         dd_form.configure(bg=config.master_bg)
         dd_form.grab_set()
@@ -178,21 +175,22 @@ def create_summary_form(parent, conn, cursor):                          # Win_ID
 
         dd_columns = ("Day", "Month", "Description", "Amount")
         dd_tree = ttk.Treeview(dd_form, columns=dd_columns, show="headings", height=40)
-        dd_tree.place(x=int(10 * scaling_factor), y=int(10 * scaling_factor), width=int(425 * scaling_factor), height=int(860 * scaling_factor))
+        dd_tree.place(x=sc(20), y=sc(10), width=sc(550), height=sc(860))
         scrollbar = ttk.Scrollbar(dd_form, orient="vertical", command=dd_tree.yview)
-        scrollbar.place(x=int(435 * scaling_factor), y=int(10 * scaling_factor), height=int(860 * scaling_factor))
+        scrollbar.place(x=sc(570), y=sc(10), height=sc(860))
         dd_tree.configure(yscrollcommand=scrollbar.set)
         
-        dd_tree.tag_configure("total", background=config.master_bg, font=("Arial", 10))
-        dd_tree.tag_configure("marked", background="#FFC993")
-        dd_tree.tag_configure("forecast", foreground=COLORS["forecast_tx"], font=("Arial", 10))
-        dd_tree.tag_configure("processing", foreground=COLORS["pending_tx"], font=("Arial", 10))
-        dd_tree.tag_configure("complete", foreground=COLORS["complete_tx"], font=("Arial", 10))
+        dd_tree.tag_configure("total", background=COLORS["act_but_bg"], font=(config.ha_normal))
+        dd_tree.tag_configure("marked", background=COLORS["flag_mk_bg"], font=(config.ha_normal))
+        dd_tree.tag_configure("forecast", foreground=COLORS["forecast_tx"], font=(config.ha_normal))
+        dd_tree.tag_configure("processing", foreground=COLORS["pending_tx"], font=(config.ha_normal))
+        dd_tree.tag_configure("complete", foreground=COLORS["complete_tx"], font=(config.ha_normal))
 
-        dd_widths = [50, 60, 215, 95]
-        for col, width in zip(dd_columns, dd_widths):
+        dd_widths = [20, 20, 350, 70]
+        dd_anchors = ["center", "center", "w", "e"]
+        for col, width, anchor in zip(dd_columns, dd_widths, dd_anchors):
             dd_tree.heading(col, text=col, anchor="center")
-            dd_tree.column(col, width=width, anchor="w" if col != "Amount" else "e")
+            dd_tree.column(col, width=width, anchor=anchor) 
 
         transactions = fetch_transactions(year, pid, cid)
         current_month = None
@@ -227,10 +225,10 @@ def create_summary_form(parent, conn, cursor):                          # Win_ID
             dd_tree.insert("", "end", values=("", "", f"{month_names[current_month]} Total", f"{month_total:,.2f}  "),
                 tags=("total",))
 
-        tk.Button(  dd_form, text="Close", font=("Arial", 10), bg="white",
-                    command=lambda: close_form_with_position(dd_form, conn, cursor, 19)).place(x=int(10 * scaling_factor), y=int(890 * scaling_factor), width=int(100 * scaling_factor))
-        tk.Button(  dd_form, text="Mark (space)", font=("Arial", 10), bg="white",
-                    command=lambda: toggle_mark()).place(x=int(350 * scaling_factor), y=int(890 * scaling_factor), width=int(100 * scaling_factor))
+        tk.Button(  dd_form, text="Close", font=(config.ha_button), bg=COLORS["exit_but_bg"],
+                    command=lambda: close_form_with_position(dd_form, conn, cursor, 19)).place(x=sc(450), y=sc(890), width=sc(100))
+        tk.Button(  dd_form, text="Mark (space)", font=(config.ha_button),
+                    command=lambda: toggle_mark()).place(x=sc(50), y=sc(890), width=sc(100))
 
         def toggle_mark():
             selected = dd_tree.selection()
@@ -459,9 +457,8 @@ def create_summary_form(parent, conn, cursor):                          # Win_ID
 def create_monthly_focus_form(parent, conn, cursor, year, month):       # Win_ID = 20                               180
     form = tk.Toplevel(parent)
     win_id = 20
-    scaling_factor = parent.winfo_fpixels('1i') / 96  # Get scaling factor (e.g., 2.0 for 200% scaling)
     open_form_with_position(form, conn, cursor, win_id, f"Monthly Focus - {month_names[month]}")
-    form.geometry(f"{int(800 * scaling_factor)}x{int(1025 * scaling_factor)}")  # Adjust size
+    form.geometry(f"{sc(800)}x{sc(1025)}")  # Adjust size
     #form.geometry("800x1045")
     form.resizable(False, False)
     form.configure(bg=config.master_bg)
@@ -470,7 +467,7 @@ def create_monthly_focus_form(parent, conn, cursor, year, month):       # Win_ID
     # Treeview
     columns = ("Description", "Completed", "Forecast", "Total", "Budget", "Difference", "WARN")
     tree = ttk.Treeview(form, columns=columns, show="tree headings", height=46)
-    tree.place(x=int(10 * scaling_factor), y=int(10 * scaling_factor), width=int(780 * scaling_factor), height=int(960 * scaling_factor))
+    tree.place(x=sc(10), y=sc(10), width=sc(780), height=sc(960))
     tree.tag_configure("parent", background=config.master_bg, font=("Arial", 10))
     tree.tag_configure("child", font=("Arial", 10))
 
@@ -478,8 +475,8 @@ def create_monthly_focus_form(parent, conn, cursor, year, month):       # Win_ID
     style = ttk.Style()
     style.configure("Treeview.Heading", font=("Arial", 10), rowheight=25)
 
-    colw_90 = int(90 * scaling_factor)
-    widths = [int(230 * scaling_factor), colw_90, colw_90, colw_90, colw_90, colw_90, int(70 * scaling_factor)]
+    colw_90 = sc(90)
+    widths = [sc(230), colw_90, colw_90, colw_90, colw_90, colw_90, sc(70)]
     for col, width in zip(columns, widths):
         tree.heading(col, text=col, anchor="center")
         tree.column(col, width=width, anchor="e" if col != "Description" else "w")
@@ -488,7 +485,7 @@ def create_monthly_focus_form(parent, conn, cursor, year, month):       # Win_ID
 
     # Close Button
     tk.Button(form, text="Close", font=("Arial", 10), bg="white",
-            command=lambda: close_form_with_position(form, conn, cursor, win_id)).place(x=int(350 * scaling_factor), y=int(985 * scaling_factor), width=int(100 * scaling_factor))
+            command=lambda: close_form_with_position(form, conn, cursor, win_id)).place(x=sc(350), y=sc(985), width=sc(100))
 
     # Fetch Data
     def fetch_transactions_sum(pid, cid, tr_stat, month, year):

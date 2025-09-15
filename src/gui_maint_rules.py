@@ -7,9 +7,12 @@ from tkinter import *
 import logging
 import traceback
 import sqlite3
+import time
 from db import (fetch_trigger_option, fetch_action_option, create_rule_group, fetch_account_full_name, fetch_category_name, fetch_subcategory_name)
-from ui_utils import (VerticalScrolledFrame, resource_path, open_form_with_position, close_form_with_position, sc)
+from ui_utils import (VerticalScrolledFrame, resource_path, open_form_with_position, close_form_with_position, sc, Tooltip)
 from gui_maint_rule_edit import edit_rule_form
+from config import COLORS
+import config
 
 # Set up logging
 logger = logging.getLogger('HA.gui_maint_rules')
@@ -21,10 +24,11 @@ try:
 except Exception as e:
     logger.warning(f"Failed to set DPI awareness: {e}")
     
-###  Rules Maintenance Form and Rules Engine functions  ###
-
-def create_rules_form(parent, conn, cursor):                            # Win_ID = 22
+# Global image cache to reuse PhotoImage across form instances
+_image_cache = {}
     
+###  Rules Maintenance Form and Rules Engine functions  ###
+def create_rules_form(parent, conn, cursor):                            # Win_ID = 22
     # Get current HA year setting
     year = int(parent.year_var.get())  # Use global year_var
     
@@ -35,11 +39,17 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
     form.configure(bg="lightgray")
     win_id = 22
     open_form_with_position(form, conn, cursor, win_id, "Manage Rules")
-    scaling_factor = form.winfo_fpixels('1i') / 96
-    form.geometry(f"{int(1600 * scaling_factor)}x{int(1000 * scaling_factor)}")
-    logger.info(f"Opening Manage Rules form with scaling factor: {scaling_factor}")
+    form.geometry(f"{sc(1600)}x{sc(1000)}")
+    logger.info(f"Opening Manage Rules form with scaling factor: {sc(1)}")
 
-    image_refs = []
+    # Add header frame for fixed buttons
+    style = ttk.Style()
+    style.configure("Debug.TFrame", background=config.master_bg, font=(config.ha_normal))
+    header_height = sc(50)
+    header_frame = ttk.Frame(form, height=header_height, style="Debug.TFrame")
+    header_frame.pack(fill=tk.X, side=tk.TOP)
+    header_frame.grid_propagate(False)  # Prevent frame from resizing
+
     button_frames = {}
     rule_data = {}
     new_rule_buttons = {}
@@ -49,66 +59,95 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
     form.ui_elements = {
         'group_frames': [],
         'close_button': None,
-        'bottom_new_rule_group_button': None,
+        'header_new_rule_group_button': None,
         'global_up_btns': {},
         'global_down_btns': {}
     }
+    form.image_refs = []
+
+    # Use cached bitmap images or create new ones
+    global _image_cache
+    icon_files = [
+        "2_edit-48.png",
+        "3_trash-48.png",
+        "4_see_match-48.png",
+        "5_apply_rule-48.png",
+        "6_duplicate-48.png",
+        "7_up-24.png",
+        "8_down-24.png"
+    ]
+    for icon in icon_files:
+        if icon not in _image_cache:
+            img = tk.PhotoImage(file=resource_path(f"icons/{icon}"))
+            img = img.zoom(sc(1))  # Apply scaling for icons
+            _image_cache[icon] = img
+            logger.debug(f"Created new PhotoImage for {icon}")
+        form.image_refs.append(_image_cache[icon])
+        logger.debug(f"Reusing cached PhotoImage for {icon}")
+
+    # Assign cached images
+    edit_img = _image_cache["2_edit-48.png"]
+    delete_img = _image_cache["3_trash-48.png"]
+    see_match_img = _image_cache["4_see_match-48.png"]
+    apply_rule_img = _image_cache["5_apply_rule-48.png"]
+    duplicate_img = _image_cache["6_duplicate-48.png"]
+    up_img = _image_cache["7_up-24.png"]
+    down_img = _image_cache["8_down-24.png"]
     
-    top_padding = int(50 * scaling_factor)
+    top_padding = sc(10)  # Reduced to account for header
+    group_frame_padding = sc(95)
+    group_frame_collapsed = sc(50)
+    group_frame_gap = sc(10)
+    group_frame_width = sc(1560)
+    group_frame_x = sc(20)
     
-    group_frame_padding = int(95 * scaling_factor)
-    group_frame_collapsed = int(50 * scaling_factor)
-    group_frame_gap = int(10 * scaling_factor)
-    group_frame_bottom_padding = int(50 * scaling_factor)
-    group_frame_width = int(1560 * scaling_factor)
-    group_frame_x = int(20 * scaling_factor)
+    tree_height_padding = sc(25)
+    tree_x = sc(285)
+    tree_y = sc(31)
+    tree_width = sc(1260)
     
-    tree_height_padding = int(25 * scaling_factor)
-    tree_x = int(285 * scaling_factor)
-    tree_y = int(31 * scaling_factor)
-    tree_width = int(1260 * scaling_factor)
+    max_y = sc(120)
+    max_x = sc(1400)
     
-    max_y = int(120 * scaling_factor)
-    max_x = int(1400 * scaling_factor)
+    new_rule_group_button_x = sc(20)
+    new_rule_group_button_width = sc(150)
+    new_rule_group_button_height = sc(28)
+    new_rule_group_button_y = sc(10)
     
-    new_rule_group_button_offset = int(10 * scaling_factor)
-    new_rule_group_button_x = int(20 * scaling_factor)
-    new_rule_group_button_width = int(150 * scaling_factor)
-    new_rule_group_button_height = int(28 * scaling_factor)
+    close_button_x = sc(1410)
+    close_button_width = sc(165)
+    close_button_height = sc(28)
+    close_button_y = sc(10)
     
-    close_button_offset = int(10 * scaling_factor)
-    close_button_x = int(1400 * scaling_factor)
-    close_button_width = int(165 * scaling_factor)
-    close_button_height = int(28 * scaling_factor)
-    close_button_nogroups = int(110 * scaling_factor)
+    new_rule_button_offset = sc(35)
+    new_rule_button_width = sc(165)
+    new_rule_button_height = sc(28)
     
-    new_rule_button_offset = int(35 * scaling_factor)
-    new_rule_button_width = int(165 * scaling_factor)
-    new_rule_button_height = int(28 * scaling_factor)
+    up_down_button_offset = sc(40)
+    up_down_button_height = sc(24)
+    up_button_x = sc(350)
+    down_button_x = sc(400)
     
-    bottom_buttons_padding = int(10 * scaling_factor)
+    icon_size = sc(48)
+    bf_y_offset = sc(50)
+    bf_width = sc(5 * 53)
+    bf_x = sc(12)
+    bbox_adjustment = sc(-18)
     
-    up_down_button_offset = int(40 * scaling_factor)
-    up_down_button_height = int(24 * scaling_factor)
-    up_button_x = int(350 * scaling_factor)
-    down_button_x = int(400 * scaling_factor)
+    expand_l_button_x = sc(10)
+    expand_r_button_x = sc(1500)
+    menu_button_x = sc(1527)
+    rg_button_y = sc(5)
+    rg_button_size = sc(20)
     
-    icon_size = int(48 * scaling_factor)
-    bf_y_offset = int(50 * scaling_factor)
-    bf_width = int(5 * 53 * scaling_factor)
-    bf_x = int(12 * scaling_factor)
-    bbox_adjustment = int(-18 * scaling_factor)
+    scrolled_frame_bottom_padding = sc(20)
     
-    expand_button_x = int(1502 * scaling_factor)
-    expandl_button_x = int(10 * scaling_factor)
-    menu_button_x = int(1527 * scaling_factor)
-    expand_menu_button_size = int(20 * scaling_factor)
+    tree_colw_300 = sc(300)
+    tree_colw_65 = sc(65)
+    tree_colw_381 = sc(381)
     
-    scrolled_frame_bottom_padding = int(60 * scaling_factor)
-    
-    tree_colw_300 = int(300 * scaling_factor)
-    tree_colw_65 = int(65 * scaling_factor)
-    tree_colw_381 = int(381 * scaling_factor)
+    pop_button_width = 48       # scaled inside function
+    pop_button_height = 48      # scaled inside function
 
     def count_visible_rows(tree, item=""):
         """Count all visible rows in the Treeview, including expanded children."""
@@ -151,12 +190,11 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
             tree.update_idletasks()  # Ensure Treeview is rendered
             form.update_idletasks()  # Ensure form is updated
             #logger.debug(f"Tree mapped: {tree.winfo_ismapped()}, New Rule btn mapped: {new_rule_btn.winfo_ismapped() if new_rule_btn else None}")
-        if form.ui_elements['close_button'] is not None:
-            update_all_group_positions(form, scrolled_frame)            
+        update_all_group_positions(form, scrolled_frame)            
 
     def update_all_group_positions(form, scrolled_frame):
         #logger.debug("   ** update_all_group_positions() ** ")
-        y_offset = top_padding
+        y_offset = top_padding  # Offset by header height
         maximum_y = 0
         for gid, gf, tree in form.ui_elements['group_frames']:
             if group_states.get(gid, False):
@@ -165,20 +203,18 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
                 #logger.debug(f"total_rows = {total_rows}, height = {height}")
             else:
                 height = group_frame_collapsed
-            gf.place(y=y_offset, height=height)
+            gf.place(x=group_frame_x, y=y_offset, height=height)
             maximum_y = y_offset + height
             y_offset += height + group_frame_gap
             #logger.debug(f"maximum_y = {maximum_y}")
 
-        form.ui_elements['close_button'].place(y=maximum_y + close_button_offset)
-        form.ui_elements['bottom_new_rule_group_button'].place(y=maximum_y + new_rule_group_button_offset)
-        #logger.debug(f"bottom new rule button placed at: y= {maximum_y + new_rule_group_button_offset}")
         form.update_idletasks()
         total_height = maximum_y + scrolled_frame_bottom_padding
         scrolled_frame.interior.configure(height=total_height)
-        scrolled_frame.canvas.config(scrollregion=(0, 0, 1400 * scaling_factor, total_height))
+        width = sc(1400)
+        scrolled_frame.canvas.config(scrollregion=(0, 0, width, total_height))
 
-    def update_button_positions(group_id, tree, button_frames, new_rule_btn, rules, group_frames, scrolled_frame, close_button, bottom_new_rule_group_button, global_up_btns, global_down_btns):
+    def update_button_positions(group_id, tree, button_frames, new_rule_btn, rules, group_frames, scrolled_frame, close_button, global_up_btns, global_down_btns):
         #logger.debug("   ** update_button_positions() ** ")
         #logger.debug(f"Button positioning for Group ID {group_id}")
         total_rows = count_visible_rows(tree)
@@ -229,11 +265,11 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
         group_frame = next((gf for g, gf, _ in group_frames if g == group_id), None)
         if group_frame:
             max_y = max((w.winfo_y() + w.winfo_height() for w in group_frame.winfo_children() if w.winfo_ismapped()), default=0)
-            group_frame.configure(height=max_y + int(10 * scaling_factor))
-            group_heights[group_id] = max_y + int(10 * scaling_factor)
-            #logger.debug(f"Configured group frame height for Group ID {group_id} to {max_y + int(10 * scaling_factor)}")
+            group_frame.configure(height=max_y + sc(10))
+            group_heights[group_id] = max_y + sc(10)
+            #logger.debug(f"Configured group frame height for Group ID {group_id} to {max_y + sc(10)}")
 
-    def on_tree_click(event, tree, tree_height, scrolled_frame, group_frames, close_button, bottom_new_rule_group_button, rules, group_id, global_up_btns, global_down_btns):
+    def on_tree_click(event, tree, tree_height, scrolled_frame, group_frames, close_button, global_up_btns, global_down_btns, rules, group_id):
         #logger.debug("   ** on_tree_click() ** ")
         #logger.debug(f"Click at x={event.x}, y={event.y}, event={event.type}, region={tree.identify_region(event.x, event.y)}, item={tree.identify('item', event.x, event.y)}, selection={tree.selection()}, focus={tree.focus()}")
         #logger.debug(f"Treeview bounds: x=0, y=0, width={tree.winfo_width()}, height={tree.winfo_height()}")
@@ -267,28 +303,37 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
         # Map TrigO_ID to TrigO_Description for triggers
         trigger_lines = []
         for t in triggers:
-            trigo_id, trig_value, trig_sequence = t                     # get trigger option type (id) and related value (if any) for this trigger row
-            trig_option = fetch_trigger_option(cursor, trigo_id)        # fetch text description of trigger option
+            trigo_id, trig_value, trig_sequence = t
+            trig_option = fetch_trigger_option(cursor, trigo_id)
             if trig_option:
                 trig_desc = trig_option[0] if trig_option and len(trig_option) > 0 and len(trig_option[0]) > 0 else f"Unknown Trigger (ID: {trigo_id})"
-                trig_desc = trig_desc[:-2]                              # remove the 2 dots at the end of description string
-                trig_desc_sp = trig_desc.ljust(35)                      # set to be exact size for better alignment
-                if 1 <= trigo_id <= 3:                                  # Amount - Numeric field (6d2 format)
+                trig_desc = trig_desc[:-2]  # Remove trailing dots
+                trig_desc_sp = trig_desc.ljust(30)  # Align to 30 chars
+                if 1 <= trigo_id <= 3:  # Amount - Numeric field (6d2 format)
                     trigger_lines.append(f'   {trig_desc_sp} £{trig_value}')
-                elif 4 <= trigo_id <= 15:                               # Tag or Description
+                elif 4 <= trigo_id <= 15:  # Tag or Description
                     trigger_lines.append(f'   {trig_desc_sp} "{trig_value}"')
-                elif 16 <= trigo_id <= 19:                              # Account Name
+                elif 16 <= trigo_id <= 19:  # Account Name
                     acc_id = int(trig_value)
                     acc_name = fetch_account_full_name(cursor, acc_id, year)
                     trigger_lines.append(f'   {trig_desc}   {acc_name}')
-                elif 20 <= trigo_id <= 22:                              # Date
+                elif 20 <= trigo_id <= 22:  # Date
                     trigger_lines.append(f'   {trig_desc_sp} {trig_value}')
-                elif 23 <= trigo_id <= 27:                              # No field required
+                elif 23 <= trigo_id <= 27:  # No field required
                     trigger_lines.append(f'   {trig_desc}')
             else:
                 logger.warning(f"No description found for TrigO_ID {trigo_id}")
                 trigger_lines.append(f'   Unknown Trigger "{trig_value}"')
-        
+
+        # Modify trigger_lines based on Rule_Trigger_Mode (column 3)
+        rule_trigger_mode = values[2]  # Get Rule_Trigger_Mode from column 3
+        if rule_trigger_mode == "Any":
+            trigger_lines = [f"      {trigger_lines[0]}"] + [f"OR {line}" for line in trigger_lines[1:]]
+        elif rule_trigger_mode == "ALL":
+            trigger_lines = [f"      {trigger_lines[0]}"] + [f"AND{line}" for line in trigger_lines[1:]]
+        else:
+            logger.warning(f"Invalid Rule_Trigger_Mode: {rule_trigger_mode}")
+            
         # Map ActO_ID to ActO_Description for actions
         action_lines = []
         for a in actions:
@@ -386,17 +431,28 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
         tree.update_idletasks()
         tree.lift()
         # Update button positions and group frame heights
-        update_button_positions(group_id, tree, button_frames, new_rule_buttons.get(group_id), rules, group_frames, scrolled_frame, close_button, bottom_new_rule_group_button, global_up_btns, global_down_btns)
+        update_button_positions(group_id, tree, button_frames, new_rule_buttons.get(group_id), rules, group_frames, scrolled_frame, form.ui_elements['close_button'], form.ui_elements['global_up_btns'], form.ui_elements['global_down_btns'])
         #logger.debug(f"Updated Treeview with total_rows={total_rows}, tree_height={tree_height}")
         update_all_group_positions(form, scrolled_frame)
     
+    def close_rules_form():
+        # Clean up form and ensure no resource leaks
+        for widget in form.winfo_children():
+            widget.destroy()
+        form.image_refs = []
+        import gc
+        gc.collect()
+        logger.debug(f"Closed Manage Rules form, GC collected: {gc.get_count()}")
+        close_form_with_position(form, conn, cursor, win_id)
+
     def refresh_rules(event=None):
         #logger.debug("   ** Refreshing Rules form() ** ")
         try:
             preserved_states = group_states.copy()
             #logger.debug(f"Preserved states before refresh: {preserved_states}")
             for widget in form.winfo_children():
-                widget.destroy()
+                if widget != header_frame:
+                    widget.destroy()
             button_frames.clear()
             rule_data.clear()
             new_rule_buttons.clear()
@@ -404,29 +460,33 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
             group_rules.clear()
             form.ui_elements['group_frames'].clear()
             form.ui_elements['close_button'] = None
-            form.ui_elements['bottom_new_rule_group_button'] = None
-            #logger.debug("bottom new rule button placed at: None")
+            form.ui_elements['header_new_rule_group_button'] = None
 
             global scrolled_frame
             scrolled_frame = VerticalScrolledFrame(form)
-            scrolled_frame.pack(fill=BOTH, expand=TRUE)
+            scrolled_frame.canvas.config(background=config.master_bg)
+            scrolled_frame.interior.config(background=config.master_bg)
+            scrolled_frame.scrollbar.config(background=config.master_bg)
+            scrolled_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
 
-            tk.Button(scrolled_frame.interior, text="New Rule Group", command=lambda: create_new_group_popup(form, conn, cursor), bg="white", 
-                    font=("Arial", 10)).place(x=new_rule_group_button_x, y=new_rule_group_button_offset, width=new_rule_group_button_width)
-            tk.Button(scrolled_frame.interior, text="Close", command=lambda: close_form_with_position(form, conn, cursor, win_id), bg="white", 
-                    font=("Arial", 10)).place(x=close_button_x, y=new_rule_group_button_offset, width=close_button_width)
+            form.ui_elements['header_new_rule_group_button'] = tk.Button(header_frame, text="New Rule Group", 
+                                                                        command=lambda: create_new_group_popup(form, conn, cursor), 
+                                                                        font=(config.ha_button))
+            form.ui_elements['header_new_rule_group_button'].place(x=new_rule_group_button_x, y=new_rule_group_button_y, 
+                                                                width=new_rule_group_button_width, height=new_rule_group_button_height)
+            
+            form.ui_elements['close_button'] = tk.Button(header_frame, text="Close", 
+                                                        command=lambda: close_rules_form(), 
+                                                        bg=COLORS["exit_but_bg"], font=(config.ha_button))
+            form.ui_elements['close_button'].place(x=close_button_x, y=close_button_y, 
+                                                width=close_button_width, height=close_button_height)
+
             cursor.execute("SELECT Group_ID, Group_Name FROM RuleGroups WHERE Group_Enabled = 1 ORDER BY Group_Sequence")
             groups = cursor.fetchall()
             #logger.debug(f"groups = {groups}")
             if not groups:
-                tk.Label(scrolled_frame.interior, text="No Rule Groups found. Click 'New Rule Group' to add one.", bg="white", 
-                         font=("Arial", 10)).place(x=new_rule_group_button_x, y=60 * scaling_factor)
-                tk.Button(scrolled_frame.interior, text="Close", command=lambda: close_form_with_position(form, conn, cursor, win_id), bg="white", width=int(150 / 10 * scaling_factor), 
-                        font=("Arial", 10)).place(x=close_button_x, y=close_button_nogroups, width=close_button_width)
-                form.ui_elements['close_button'] = tk.Button(scrolled_frame.interior, text="Close", command=lambda: close_form_with_position(form, conn, cursor, win_id), bg="white", width=int(150 / 10 * scaling_factor), 
-                                                            font=("Arial", 10))
-                form.ui_elements['bottom_new_rule_group_button'] = tk.Button(scrolled_frame.interior, text="New Rule Group", command=lambda: create_new_group_popup(form, conn, cursor), 
-                                                                            bg="white", width=int(150 / 10 * scaling_factor), font=("Arial", 10))
+                tk.Label(scrolled_frame.interior, text="No Rule Groups found. Click 'New Rule Group' to add one.", 
+                        bg="white", font=(config.ha_normal)).place(x=new_rule_group_button_x, y=60)
                 form.update_idletasks()
                 scrolled_frame.interior.configure(width=max_x, height=max_y)
                 scrolled_frame.canvas.config(scrollregion=(0, 0, max_x, max_y))
@@ -440,10 +500,10 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
                 group_frame.configure(style="Debug.TLabelframe")
                 style = ttk.Style()
                 style.configure("Debug.TLabelframe", background="white")
-                style.configure("Debug.TLabelframe.Label", font=("Arial", 12), background="white")
-                style.configure("Rules.Treeview", rowheight=icon_size, font=("Arial", 10))
-                style.configure("Rules.Treeview.Heading", font=("Arial", 10, "bold"))
-                group_frame.place(x=group_frame_x, y=y_offset, width=group_frame_width)
+                style.configure("Debug.TLabelframe.Label", font=(config.ha_large), background="white")
+                style.configure("Rules.Treeview", rowheight=icon_size, font=(config.ha_normal))
+                style.configure("Rules.Treeview.Heading", font=(config.ha_normal_bold))
+                group_frame.place(x=group_frame_x, y=0, width=group_frame_width)
 
                 cursor.execute("SELECT Rule_ID, Rule_Name, Rule_Active, Rule_Trigger_Mode, Rule_Proceed FROM Rules WHERE Group_ID = ? ORDER BY Rule_Sequence", (group_id,))
                 rules = cursor.fetchall()
@@ -454,14 +514,20 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
 
                 tree = ttk.Treeview(group_frame, columns=("Rule", "Active", "Mode", "Stop", "Triggers", "Actions"), show="headings", style="Rules.Treeview")
                 
-                expand_btn = tk.Button(group_frame, text="+", width=2, height=1, font=("Arial", 10), command=lambda gid=group_id, gf=group_frame, t=tree, rs=rules: toggle_group_frame(gid, gf, t, new_rule_buttons.get(gid), rs, form, scrolled_frame))
-                expand_btn.place(x=expand_button_x, y=0, width=expand_menu_button_size, height=expand_menu_button_size)
+                # Setup Rule Group buttons
+                expand_l_btn = tk.Button(group_frame, text="+", width=2, height=1, font=(config.ha_normal), command=lambda gid=group_id, gf=group_frame, t=tree, rs=rules: 
+                    toggle_group_frame(gid, gf, t, new_rule_buttons.get(gid), rs, form, scrolled_frame))
+                expand_l_btn.place(x=expand_l_button_x, y=rg_button_y, width=rg_button_size, height=rg_button_size)
                 
-                expandl_btn = tk.Button(group_frame, text="+", width=2, height=1, font=("Arial", 10), command=lambda gid=group_id, gf=group_frame, t=tree, rs=rules: toggle_group_frame(gid, gf, t, new_rule_buttons.get(gid), rs, form, scrolled_frame))
-                expandl_btn.place(x=expandl_button_x, y=5, width=expand_menu_button_size, height=expand_menu_button_size)
-                
-                menu_btn = tk.Button(group_frame, text="...", width=2, height=1, font=("Arial", 10), command=lambda gid=group_id, gn=group_name: show_group_menu(gid, gn))
-                menu_btn.place(x=menu_button_x, y=0, width=expand_menu_button_size, height=expand_menu_button_size)
+                expand_r_btn = tk.Button(group_frame, text="+", width=2, height=1, font=(config.ha_normal), command=lambda gid=group_id, gf=group_frame, t=tree, rs=rules: 
+                    toggle_group_frame(gid, gf, t, new_rule_buttons.get(gid), rs, form, scrolled_frame))
+                expand_r_btn.place(x=expand_r_button_x, y=rg_button_y, width=rg_button_size, height=rg_button_size)
+
+                menu_btn = create_menu_button(group_frame, group_id, menu_button_x, rg_button_y, rg_button_size, conn, cursor, form, scrolled_frame)
+
+                menu_btn = tk.Button(group_frame, text="...", width=2, height=1, font=(config.ha_normal), command=lambda gid=group_id, gf=group_frame, mb=menu_btn: 
+                    show_popup_palette(gid, gf, mb, conn, cursor, form, scrolled_frame))
+                menu_btn.place(x=menu_button_x, y=rg_button_y, width=rg_button_size, height=rg_button_size)
 
                 tree.heading("Rule", text="Rule Name")
                 tree.heading("Active", text="Active")
@@ -476,7 +542,7 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
                 tree.column("Triggers", width=tree_colw_381, minwidth=tree_colw_381, stretch=0, anchor='w')
                 tree.column("Actions", width=tree_colw_381, minwidth=tree_colw_381, stretch=0, anchor='w')
 
-                tree.bind("<Button-1>", lambda e, t=tree, gid=group_id: on_tree_click(e, t, tree_height, scrolled_frame, form.ui_elements['group_frames'], form.ui_elements['close_button'], form.ui_elements['bottom_new_rule_group_button'], group_rules[gid], gid, form.ui_elements['global_up_btns'], form.ui_elements['global_down_btns']))
+                tree.bind("<Button-1>", lambda e, t=tree, gid=group_id: on_tree_click(e, t, tree_height, scrolled_frame, form.ui_elements['group_frames'], form.ui_elements['close_button'], form.ui_elements['global_up_btns'], form.ui_elements['global_down_btns'], group_rules[gid], gid))
                 tree.bind("<<TreeviewSelect>>", lambda e: logger.debug(f"Selected rule: {tree.selection()}"))
 
                 button_y = bf_y_offset
@@ -492,21 +558,19 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
                     button_frames[rule_id] = buttons_frame
                     form.ui_elements.setdefault('button_frames', {})[rule_id] = buttons_frame
 
-                    icons = ["2_edit-48.png", "3_trash-48.png", "4_see_match-48.png", "5_apply_rule-48.png", "6_duplicate-48.png"]
+                    icons = [edit_img, delete_img, see_match_img, apply_rule_img, duplicate_img]
                     for i, icon in enumerate(icons):
                         try:
-                            img = tk.PhotoImage(file=resource_path(f"icons/{icon}")).zoom(int(scaling_factor))
-                            image_refs.append(img)
                             bg_col = "red" if i == 1 else "lightgray"
-                            btn = tk.Button(buttons_frame, image=img, bg=bg_col, width=icon_size, height=icon_size, 
+                            btn = tk.Button(buttons_frame, image=icon, bg=bg_col, width=icon_size, height=icon_size, 
                                             command=lambda r=rule_id, a=i, g=group_id: button_action(r, a, g, conn, cursor, form))
-                            btn.image = img
-                            btn.place(x=i * 53 * scaling_factor, y=0)
+                            #btn.image = icon
+                            btn.place(x=i * sc(53), y=0)
                         except Exception as e:
                             logger.error(f"Error loading icon {icon}: {e}")
-                            btn = tk.Button(buttons_frame, text=f"Btn{i+1}", width=6, height=2, font=("Arial", 10), 
+                            btn = tk.Button(buttons_frame, text=f"Btn{i+1}", width=6, height=2, font=(config.ha_normal), 
                                             command=lambda r=rule_id, a=i, g=group_id: button_action(r, a, g, conn, cursor, form))
-                            btn.place(x=i * 53 * scaling_factor, y=0)
+                            btn.place(x=i * sc(53), y=0)
 
                     tree.insert("", "end", iid=f"I{rule_id}", values=(rule_name, "Active" if rule_active else "Inactive", rule_trigger_mode, "Proceed" if rule_proceed else "Stop", 
                                                                     "   Show Triggers", "   Show Actions"), tags=("rule", str(rule_id)))
@@ -569,18 +633,16 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
                         # Add action buttons to new rule
                         for i, icon in enumerate(icons):
                             try:
-                                img = tk.PhotoImage(file=resource_path(f"icons/{icon}")).zoom(int(scaling_factor))
-                                image_refs.append(img)
                                 bg_col = "red" if i == 1 else "lightgray"
-                                btn = tk.Button(buttons_frame, image=img, bg=bg_col, width=icon_size, height=icon_size, 
+                                btn = tk.Button(buttons_frame, image=icon, bg=bg_col, width=icon_size, height=icon_size, 
                                                 command=lambda r=new_rule_id, a=i, g=gid: button_action(r, a, g, conn, cursor, form))
-                                btn.image = img
-                                btn.place(x=i * 53 * scaling_factor, y=0)
+                                #btn.image = icon
+                                btn.place(x=i * sc(53), y=0)
                             except Exception as e:
                                 logger.error(f"Error loading icon {icon} for new rule: {e}")
-                                btn = tk.Button(buttons_frame, text=f"Btn{i+1}", width=6, height=2, font=("Arial", 10), 
+                                btn = tk.Button(buttons_frame, text=f"Btn{i+1}", width=6, height=2, font=(config.ha_normal), 
                                                 command=lambda r=new_rule_id, a=i, g=gid: button_action(r, a, g, conn, cursor, form))
-                                btn.place(x=i * 53 * scaling_factor, y=0)
+                                btn.place(x=i * sc(53), y=0)
                         
                         # Update group_rules and rule_data
                         group_rules[gid].append((new_rule_id, new_name, 1, "ALL", 1))
@@ -599,6 +661,7 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
                                 form.ui_elements['global_down_btns'][gid].place(x=down_button_x, y=tree_height + up_down_button_offset, width=icon_size, height=up_down_button_height)
                             group_frame.configure(height=tree_height + group_frame_padding)
                         
+                        update_button_positions(gid, tree, button_frames, new_rule_buttons.get(gid), group_rules[gid], form.ui_elements['group_frames'], scrolled_frame, form.ui_elements['close_button'], form.ui_elements['global_up_btns'], form.ui_elements['global_down_btns'])
                         update_all_group_positions(form, scrolled_frame)
                         tree.update_idletasks()
                         buttons_frame.update_idletasks()
@@ -611,16 +674,12 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
                         logger.error(f"Error adding new rule to Group ID {gid}: {e}\n{traceback.format_exc()}")
                         messagebox.showerror("Error", f"Failed to add new rule: {e}", parent=form)
 
-                new_rule_btn = tk.Button(group_frame, text="New Rule", width=int(100 / 10 * scaling_factor), font=("Arial", 10), command=add_new_rule, bg="lightgrey")
+                new_rule_btn = tk.Button(group_frame, text="New Rule", width=sc(100 / 10), font=(config.ha_normal), command=add_new_rule, bg="lightgrey")
                 new_rule_buttons[group_id] = new_rule_btn
 
-                up_img = tk.PhotoImage(file=resource_path("icons/7_up-24.png")).zoom(int(scaling_factor))
-                down_img = tk.PhotoImage(file=resource_path("icons/8_down-24.png")).zoom(int(scaling_factor))
-                image_refs.extend([up_img, down_img])
-                
-                form.ui_elements['global_up_btns'][group_id] = tk.Button(group_frame, image=up_img, bg="lightgray", width=icon_size, height=24 * scaling_factor, 
+                form.ui_elements['global_up_btns'][group_id] = tk.Button(group_frame, image=up_img, bg="lightgray", width=icon_size, height=sc(24), 
                                                                         command=lambda g=group_id: move_rule_up_selected(g, conn, cursor, form))
-                form.ui_elements['global_down_btns'][group_id] = tk.Button(group_frame, image=down_img, bg="lightgray", width=icon_size, height=24 * scaling_factor, 
+                form.ui_elements['global_down_btns'][group_id] = tk.Button(group_frame, image=down_img, bg="lightgray", width=icon_size, height=sc(24), 
                                                                         command=lambda g=group_id: move_rule_down_selected(g, conn, cursor, form))
 
                 form.ui_elements['group_frames'].append((group_id, group_frame, tree))
@@ -631,16 +690,6 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
                     group_states[group_id] = False
                     toggle_group_frame(group_id, group_frame, tree, new_rule_btn, rules, form, scrolled_frame)
 
-            form.ui_elements['close_button'] = tk.Button(scrolled_frame.interior, text="Close", command=lambda: close_form_with_position(form, conn, cursor, win_id), bg="white", 
-                                                        width=int(150 / 10 * scaling_factor), font=("Arial", 10))
-            form.ui_elements['close_button'].place(x=close_button_x, y=y_offset, width=close_button_width, height=close_button_height)
-
-            form.ui_elements['bottom_new_rule_group_button'] = tk.Button(scrolled_frame.interior, text="New Rule Group", command=lambda: create_new_group_popup(form, conn, cursor), 
-                                                                        bg="white", width=int(150 / 10 * scaling_factor), font=("Arial", 10))
-            form.ui_elements['bottom_new_rule_group_button'].place(x=new_rule_group_button_x, y=y_offset, width=new_rule_group_button_width, 
-                                                                height=new_rule_group_button_height)
-            #logger.debug(f"bottom new rule button placed at: x= {new_rule_group_button_x}, y= {y_offset}")
-
             form.update_idletasks()
             update_all_group_positions(form, scrolled_frame)
             form.update()
@@ -648,9 +697,8 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
 
         except Exception as e:
             logger.error(f"Error in refresh_rules: {e}\n{traceback.format_exc()}")
-            tk.Label(scrolled_frame.interior, text=f"Error loading rules: {e}", fg="red", bg="white", font=("Arial", 10)).place(x=20 * scaling_factor, y=60 * scaling_factor)
-            tk.Button(scrolled_frame.interior, text="Close", command=lambda: close_form_with_position(form, conn, cursor, win_id), bg="white", width=int(150 / 10 * scaling_factor), 
-                    font=("Arial", 10)).place(x=close_button_x, y=close_button_nogroups, width=close_button_width)
+            tk.Label(scrolled_frame.interior, text=f"Error loading rules: {e}", fg="red", bg="white", 
+                    font=(config.ha_normal)).place(x=sc(20), y=60)
             form.update_idletasks()
             scrolled_frame.interior.configure(width=max_x, height=max_y)
             scrolled_frame.canvas.config(scrollregion=(0, 0, max_x, max_y))
@@ -668,19 +716,35 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
         index = tree.index(item_id)
         if index == 0:
             return
-        tree.move(item_id, '', index - 1)
-        tree.selection_set(item_id)
-        #logger.debug(f"item_id = {item_id} ")
-        rule_id = int(item_id[1:])  # Strip 'I' and convert to integer
-        cursor.execute("SELECT Rule_ID, Rule_Sequence FROM Rules WHERE Group_ID = ? AND Rule_ID = ?", (group_id, rule_id))
-        rec_1 = cursor.fetchall()
-        #logger.debug(f"up rec_1 = {rec_1} ")
-        cursor.execute("SELECT Rule_ID, Rule_Sequence FROM Rules WHERE Group_ID = ? AND Rule_Sequence = ?", (group_id, rec_1[0][1] - 1))
-        rec_2 = cursor.fetchall()
-        #logger.debug(f"up rec_2 = {rec_2} ")
-        cursor.execute("UPDATE Rules SET Rule_Sequence = ? WHERE Rule_ID = ?", (rec_1[0][1], rec_2[0][0]))
-        cursor.execute("UPDATE Rules SET Rule_Sequence = ? WHERE Rule_ID = ?", (rec_2[0][1], rec_1[0][0]))
-        conn.commit()
+        try:
+            tree.move(item_id, '', index - 1)
+            tree.selection_set(item_id)
+            logger.debug(f"item_id = {item_id} ")
+            rule_id = int(item_id[1:])  # Strip 'I' and convert to integer
+            cursor.execute("SELECT Rule_ID, Rule_Sequence FROM Rules WHERE Group_ID = ? AND Rule_ID = ?", (group_id, rule_id))
+            rec_1 = cursor.fetchall()
+            logger.debug(f"up rec_1 = {rec_1} ")
+            cursor.execute("SELECT Rule_ID, Rule_Sequence FROM Rules WHERE Group_ID = ? AND Rule_Sequence = ?", (group_id, rec_1[0][1] - 1))
+            rec_2 = cursor.fetchall()
+            logger.debug(f"up rec_2 = {rec_2} ")
+            cursor.execute("UPDATE Rules SET Rule_Sequence = ? WHERE Rule_ID = ?", (rec_1[0][1], rec_2[0][0]))
+            logger.debug(f"updated Rule_ID = {rec_2[0][0]},  Rule_Sequence = {rec_1[0][1]}")
+            cursor.execute("UPDATE Rules SET Rule_Sequence = ? WHERE Rule_ID = ?", (rec_2[0][1], rec_1[0][0]))
+            logger.debug(f"updated Rule_ID = {rec_1[0][0]},  Rule_Sequence = {rec_2[0][1]}")
+            conn.commit()
+
+            # Update group_rules to reflect new order
+            cursor.execute("SELECT Rule_ID, Rule_Name, Rule_Active, Rule_Trigger_Mode, Rule_Proceed FROM Rules WHERE Group_ID = ? ORDER BY Rule_Sequence", (group_id,))
+            group_rules[group_id] = cursor.fetchall()
+            logger.debug(f"Updated group_rules[{group_id}] = {group_rules[group_id]}")
+
+            # Reposition buttons and update layout
+            update_button_positions(group_id, tree, button_frames, new_rule_buttons.get(group_id), group_rules[group_id], form.ui_elements['group_frames'], scrolled_frame, form.ui_elements['close_button'], form.ui_elements['global_up_btns'], form.ui_elements['global_down_btns'])
+            update_all_group_positions(form, scrolled_frame)
+            tree.update_idletasks()
+            form.update_idletasks()
+        except Exception as e:
+            logger.error(f"Error moving Rule ID {item_id}: {e}\n{traceback.format_exc()}")
 
     def move_rule_down_selected(group_id, conn, cursor, form):
         #logger.debug("   ** move_rule_down_selected() ** ")
@@ -695,22 +759,36 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
         index = tree.index(item_id)
         if index == len(tree.get_children()) - 1:
             return
-        tree.move(item_id, '', index + 1)
-        tree.selection_set(item_id)
-        #logger.debug(f"item_id = {item_id} ")
-        rule_id = int(item_id[1:])  # Strip 'I' and convert to integer
-        cursor.execute("SELECT Rule_ID, Rule_Sequence FROM Rules WHERE Group_ID = ? AND Rule_ID = ?", (group_id, rule_id))
-        rec_1 = cursor.fetchall()
-        #logger.debug(f"down rec_1 = {rec_1} ")
-        cursor.execute("SELECT Rule_ID, Rule_Sequence FROM Rules WHERE Group_ID = ? AND Rule_Sequence = ?", (group_id, rec_1[0][1] + 1))
-        rec_2 = cursor.fetchall()
-        #logger.debug(f"down rec_2 = {rec_2} ")
-        cursor.execute("UPDATE Rules SET Rule_Sequence = ? WHERE Rule_ID = ?", (rec_1[0][1], rec_2[0][0]))
-        cursor.execute("UPDATE Rules SET Rule_Sequence = ? WHERE Rule_ID = ?", (rec_2[0][1], rec_1[0][0]))
-        conn.commit()
+        try:
+            tree.move(item_id, '', index + 1)
+            tree.selection_set(item_id)
+            logger.debug(f"item_id = {item_id} ")
+            rule_id = int(item_id[1:])  # Strip 'I' and convert to integer
+            cursor.execute("SELECT Rule_ID, Rule_Sequence FROM Rules WHERE Group_ID = ? AND Rule_ID = ?", (group_id, rule_id))
+            rec_1 = cursor.fetchall()
+            logger.debug(f"down rec_1 = {rec_1} ")
+            cursor.execute("SELECT Rule_ID, Rule_Sequence FROM Rules WHERE Group_ID = ? AND Rule_Sequence = ?", (group_id, rec_1[0][1] + 1))
+            rec_2 = cursor.fetchall()
+            logger.debug(f"down rec_2 = {rec_2} ")
+            cursor.execute("UPDATE Rules SET Rule_Sequence = ? WHERE Rule_ID = ?", (rec_1[0][1], rec_2[0][0]))
+            cursor.execute("UPDATE Rules SET Rule_Sequence = ? WHERE Rule_ID = ?", (rec_2[0][1], rec_1[0][0]))
+            conn.commit()
+
+            # Update group_rules to reflect new order
+            cursor.execute("SELECT Rule_ID, Rule_Name, Rule_Active, Rule_Trigger_Mode, Rule_Proceed FROM Rules WHERE Group_ID = ? ORDER BY Rule_Sequence", (group_id,))
+            group_rules[group_id] = cursor.fetchall()
+            logger.debug(f"Updated group_rules[{group_id}] = {group_rules[group_id]}")
+
+            # Reposition buttons and update layout
+            update_button_positions(group_id, tree, button_frames, new_rule_buttons.get(group_id), group_rules[group_id], form.ui_elements['group_frames'], scrolled_frame, form.ui_elements['close_button'], form.ui_elements['global_up_btns'], form.ui_elements['global_down_btns'])
+            update_all_group_positions(form, scrolled_frame)
+            tree.update_idletasks()
+            form.update_idletasks()
+        except Exception as e:
+            logger.error(f"Error moving Rule ID {item_id}: {e}\n{traceback.format_exc()}")
 
     def button_action(rule_id, action_index, group_id, conn, cursor, form):
-        #logger.debug("   ** button_action() ** ")
+        logger.debug("   ** button_action() ** ")
         actions = {
             0: lambda r, g: edit_rule_form(r, g, conn, cursor, form, scrolled_frame, parent, is_new_rule=False),
             1: lambda r, g: delete_rule(r, g, conn, cursor, form),
@@ -793,11 +871,269 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
         except Exception as e:
             logger.error(f"Error renumbering sequences for Group ID {group_id}: {e}\n{traceback.format_exc()}")
 
-    def show_group_menu(group_id, group_name):
-        # Placeholder for group menu
-        #logger.debug(f"Showing menu for Group ID {group_id}, Name: {group_name}")
-        messagebox.showinfo("Group Menu", f"Menu for Group {group_name} (ID: {group_id})")
+    def create_menu_button(group_frame, group_id, menu_button_x, rg_button_y, rg_button_size, conn, cursor, form, scrolled_frame):
+        """Factory function to create menu button with proper lambda reference."""
+        menu_btn = tk.Button(group_frame, text="...", width=2, height=1, font=(config.ha_normal),
+                            command=lambda: show_popup_palette(group_id, group_frame, menu_btn, conn, cursor, form, scrolled_frame))
+        menu_btn.place(x=menu_button_x, y=rg_button_y, width=rg_button_size, height=rg_button_size)
+        return menu_btn
 
+    # Functions for Rule Group menu button actions
+    def edit_group_name(group_id, group_frame, conn, cursor, parent, scrolled_frame):
+        """Create a popup to edit the Rule Group name."""
+        logger.debug(f"Editing group name for group_id={group_id}")
+        popup = tk.Toplevel(parent)
+        popup.title("Edit Rule Group")
+        popup.transient(parent)
+        popup.grab_set()
+        win_id = 26  # Unique Win_ID for Edit Rule Group name popup
+        open_form_with_position(popup, conn, cursor, win_id, "Edit Rule Group Name")
+        popup.geometry(f"{sc(300)}x{sc(150)}")
+        popup.configure(bg=config.master_bg)
+
+        # Get current group name
+        cursor.execute("SELECT Group_Name FROM RuleGroups WHERE Group_ID = ?", (group_id,))
+        current_name = cursor.fetchone()[0]
+
+        # Create UI elements
+        tk.Label(popup, text="Edit Rule Group Name:", bg=config.master_bg, font=config.ha_normal).place(x=sc(30), y=sc(20))
+        name_entry = tk.Entry(popup, font=config.ha_normal, width=35)
+        name_entry.insert(0, current_name)
+        name_entry.place(x=sc(30), y=sc(50))
+        name_entry.focus_set()
+
+        def save_group_name():
+            new_name = name_entry.get().strip()
+            if not new_name:
+                messagebox.showerror("Error", "Group name cannot be empty", parent=popup)
+                return
+            try:
+                cursor.execute("SELECT COUNT(*) FROM RuleGroups WHERE Group_Name = ? AND Group_ID != ?", (new_name, group_id))
+                if cursor.fetchone()[0] > 0:
+                    messagebox.showerror("Error", f"Group name '{new_name}' already exists", parent=popup)
+                    return
+                cursor.execute("UPDATE RuleGroups SET Group_Name = ? WHERE Group_ID = ?", (new_name, group_id))
+                conn.commit()
+                #logger.info(f"Updated Rule Group name to '{new_name}' for Group_ID={group_id}")
+                close_form_with_position(popup, conn, cursor, win_id)
+                parent.event_generate("<<RefreshRules>>")
+                #logger.debug("Triggered RefreshRules for edit_group_name")
+                parent.lift()
+            except sqlite3.IntegrityError as e:
+                logger.error(f"IntegrityError updating Rule Group name: {e}")
+                messagebox.showerror("Error", f"Group name '{new_name}' already exists", parent=popup)
+            except Exception as e:
+                logger.error(f"Error updating Rule Group name: {e}")
+                messagebox.showerror("Error", f"Failed to update Rule Group: {e}", parent=popup)
+                parent.lift()
+
+        tk.Button(popup, text="Save", font=config.ha_button, width=10, command=save_group_name).place(x=sc(30), y=sc(100))
+        tk.Button(popup, text="Cancel", font=config.ha_button, bg=COLORS["exit_but_bg"], width=10, 
+                command=lambda: [close_form_with_position(popup, conn, cursor, win_id), parent.lift()]).place(x=sc(170), y=sc(100))
+
+    def delete_rule_group(group_id, group_frame, conn, cursor, parent, scrolled_frame):
+        """Create a confirmation popup to delete a Rule Group and its associated Rules, Triggers, and Actions."""
+        logger.debug(f"Deleting Rule Group for group_id={group_id}")
+        popup = tk.Toplevel(parent)
+        popup.title("Delete Rule Group")
+        popup.transient(parent)
+        popup.grab_set()
+        win_id = 27  # Unique Win_ID for Delete Rule Group confirmation popup window
+        open_form_with_position(popup, conn, cursor, win_id, "Delete Rule Group")
+        popup.geometry(f"{sc(300)}x{sc(150)}")
+        popup.configure(bg=config.master_bg)
+
+        # Get group name for display
+        cursor.execute("SELECT Group_Name FROM RuleGroups WHERE Group_ID = ?", (group_id,))
+        group_name = cursor.fetchone()[0]
+
+        # Create UI elements
+        tk.Label(popup, text=f"Delete Rule Group '{group_name}'?", bg=config.master_bg, font=config.ha_normal).place(x=sc(30), y=sc(20))
+        tk.Label(popup, text="This will delete all associated rules.", bg=config.master_bg, font=config.ha_normal).place(x=sc(30), y=sc(50))
+
+        def confirm_delete():
+            try:
+                # Delete associated Triggers and Actions via Rules
+                cursor.execute("SELECT Rule_ID FROM Rules WHERE Group_ID = ?", (group_id,))
+                rule_ids = [row[0] for row in cursor.fetchall()]
+                for rule_id in rule_ids:
+                    cursor.execute("DELETE FROM Triggers WHERE Rule_ID = ?", (rule_id,))
+                    cursor.execute("DELETE FROM Actions WHERE Rule_ID = ?", (rule_id,))
+                # Delete Rules
+                cursor.execute("DELETE FROM Rules WHERE Group_ID = ?", (group_id,))
+                # Delete Rule Group
+                cursor.execute("DELETE FROM RuleGroups WHERE Group_ID = ?", (group_id,))
+                # Renumber Group_Sequence for remaining groups
+                renumber_group_sequences(conn, cursor)
+                conn.commit()
+                logger.info(f"Deleted Rule Group ID={group_id} and associated Rules, Triggers, Actions")
+                close_form_with_position(popup, conn, cursor, win_id)
+                parent.event_generate("<<RefreshRules>>")
+                #logger.debug("Triggered RefreshRules for delete_rule_group")
+                parent.lift()
+            except Exception as e:
+                logger.error(f"Error deleting Rule Group ID={group_id}: {e}\n{traceback.format_exc()}")
+                messagebox.showerror("Error", f"Failed to delete Rule Group: {e}", parent=popup)
+                parent.lift()
+
+        tk.Button(popup, text="Yes", font=config.ha_button, width=10, command=confirm_delete).place(x=sc(30), y=sc(100))
+        tk.Button(popup, text="No", font=config.ha_button, bg=COLORS["exit_but_bg"], width=10, 
+                command=lambda: [close_form_with_position(popup, conn, cursor, win_id), parent.lift()]).place(x=sc(180), y=sc(100))
+
+    def move_rg_up(group_id, group_frame, conn, cursor, parent, scrolled_frame):
+        """Move the Rule Group up in the sequence by updating Group_Sequence."""
+        logger.debug(f"Moving Rule Group ID={group_id} up")
+        try:
+            # Get current group's sequence
+            cursor.execute("SELECT Group_Sequence FROM RuleGroups WHERE Group_ID = ?", (group_id,))
+            current_seq = cursor.fetchone()
+            if not current_seq:
+                logger.error(f"Group ID {group_id} not found")
+                return
+            current_seq = current_seq[0]
+            if current_seq == 1:
+                logger.debug(f"Group ID {group_id} is already at the top")
+                return
+
+            # Find the group with the previous sequence
+            cursor.execute("SELECT Group_ID, Group_Sequence FROM RuleGroups WHERE Group_Sequence = ? AND Group_Enabled = 1", (current_seq - 1,))
+            prev_group = cursor.fetchone()
+            if not prev_group:
+                logger.error(f"No group found with sequence {current_seq - 1}")
+                return
+
+            # Swap sequences
+            cursor.execute("UPDATE RuleGroups SET Group_Sequence = ? WHERE Group_ID = ?", (current_seq, prev_group[0]))
+            cursor.execute("UPDATE RuleGroups SET Group_Sequence = ? WHERE Group_ID = ?", (prev_group[1], group_id))
+            conn.commit()
+            #logger.debug(f"Swapped Group_Sequence: Group_ID {group_id} to position {prev_group[1]}, Group_ID {prev_group[0]} to position {current_seq}")
+
+            # Refresh the form
+            parent.event_generate("<<RefreshRules>>")
+            parent.update_idletasks()  # Force UI update
+            #logger.debug("Triggered RefreshRules for move_rg_up")
+        except Exception as e:
+            logger.error(f"Error moving Rule Group ID {group_id} up: {e}\n{traceback.format_exc()}")
+
+    def move_rg_down(group_id, group_frame, conn, cursor, parent, scrolled_frame):
+        """Move the Rule Group down in the sequence by updating Group_Sequence."""
+        logger.debug(f"Moving Rule Group ID={group_id} down")
+        try:
+            # Get current group's sequence
+            cursor.execute("SELECT Group_Sequence FROM RuleGroups WHERE Group_ID = ?", (group_id,))
+            current_seq = cursor.fetchone()
+            if not current_seq:
+                logger.error(f"Group ID {group_id} not found")
+                return
+            current_seq = current_seq[0]
+
+            # Find the group with the next sequence
+            cursor.execute("SELECT Group_ID, Group_Sequence FROM RuleGroups WHERE Group_Sequence = ? AND Group_Enabled = 1", (current_seq + 1,))
+            next_group = cursor.fetchone()
+            if not next_group:
+                logger.debug(f"Group ID {group_id} is already at the bottom")
+                return
+
+            # Swap sequences
+            cursor.execute("UPDATE RuleGroups SET Group_Sequence = ? WHERE Group_ID = ?", (current_seq, next_group[0]))
+            cursor.execute("UPDATE RuleGroups SET Group_Sequence = ? WHERE Group_ID = ?", (next_group[1], group_id))
+            conn.commit()
+            #logger.debug(f"Swapped Group_Sequence: Group_ID {group_id} to position {next_group[1]}, Group_ID {next_group[0]} to position {current_seq}")
+
+            # Refresh the form
+            parent.event_generate("<<RefreshRules>>")
+            parent.update_idletasks()  # Force UI update
+            #logger.debug("Triggered RefreshRules for move_rg_down")            
+        except Exception as e:
+            logger.error(f"Error moving Rule Group ID {group_id} down: {e}\n{traceback.format_exc()}")
+
+    def show_popup_palette(group_id, group_frame, menu_btn, conn, cursor, parent, scrolled_frame):
+        """
+        Create a popup button palette with 4 horizontal buttons and a close button.
+        
+        Args:
+            group_id: Identifier for the group (e.g., for button actions).
+            group_frame: The parent frame containing the calling button.
+            menu_btn: The button widget that triggered the palette (for positioning).
+        """        
+        # Add tooltip handling in palette
+        ttk.Style().configure("Palettebutton.TButton")
+        
+        # Create Toplevel window for the palette
+        palette = tk.Toplevel(group_frame.winfo_toplevel())  # Use root as parent        
+        palette.overrideredirect(True)  # Remove titlebar
+        palette.attributes("-topmost", True)  # Keep on top
+        palette.configure(bg=config.master_bg, borderwidth=1, relief='solid')
+        
+        # Calculate dimensions
+        border = sc(20)  # 20px unscaled border, scaled
+        button_width = sc(pop_button_width)
+        button_height = sc(pop_button_height)
+        total_width = 4 * button_width + 2 * border  # 4 buttons + borders
+        total_height = button_height + 2 * border  # Buttons + borders
+        close_button_size = sc(20)  # Close button 20x20 unscaled
+        
+        # Position palette: Align top-right corner with menu_btn's top-right
+        button_x = menu_btn.winfo_rootx()  # Screen coordinates
+        button_y = menu_btn.winfo_rooty()
+        button_width_actual = menu_btn.winfo_width()
+        palette_x = button_x + button_width_actual - total_width  # Align right edges
+        palette_y = button_y  # Align top edges
+        palette.geometry(f"{total_width}x{total_height}+{palette_x}+{palette_y}")
+        palette.update_idletasks()  # Ensure position is applied
+        #logger.debug(f"Palette created at {palette_x},{palette_y} ({total_width}x{total_height})")        
+        
+        pop_button_images = []
+        icons = ["2_edit-48.png", "3_trash-48.png", "3_up-48.png", "4_down-48.png"]
+        for i, icon in enumerate(icons):
+            img = tk.PhotoImage(file=resource_path(f"icons/{icon}")).zoom(sc(1))
+            pop_button_images.append(img)
+        
+        # Create frame to hold buttons
+        frame = tk.Frame(palette, bg=config.master_bg)
+        frame.place(x=border, y=border, width=4 * button_width, height=button_height)
+        
+        # Create 4 buttons with icons, no spacing
+        button1 = tk.Button(frame, image=pop_button_images[0], bg="lightgray", command=lambda: [close_popup(palette), 
+                                            edit_group_name(group_id, group_frame, conn, cursor, parent, scrolled_frame)])
+        button1.place(x=0, y=0, width=button_width, height=button_height)
+        Tooltip(button1, "Edit Rule Group name")
+        
+        button2 = tk.Button(frame, image=pop_button_images[1], bg="red", command=lambda: [close_popup(palette),
+                                            delete_rule_group(group_id, group_frame, conn, cursor, parent, scrolled_frame)])
+        button2.place(x=button_width, y=0, width=button_width, height=button_height)
+        Tooltip(button2, "Delete Rule Group")
+        
+        button3 = tk.Button(frame, image=pop_button_images[2], bg="lightgray", command=lambda: [close_popup(palette),
+                                            move_rg_up(group_id, group_frame, conn, cursor, parent, scrolled_frame)])
+        button3.place(x=2 * button_width, y=0, width=button_width, height=button_height)
+        Tooltip(button3, "Move Rule Group up in list")
+        
+        button4 = tk.Button(frame, image=pop_button_images[3], bg="lightgray", command=lambda: [close_popup(palette),
+                                            move_rg_down(group_id, group_frame, conn, cursor, parent, scrolled_frame)])
+        button4.place(x=3 * button_width, y=0, width=button_width, height=button_height)
+        Tooltip(button4, "Move Rule Group down in list")
+        
+        # Schedule auto-close
+        timer_id = palette.after(5000, lambda: close_popup(palette))
+        
+        def close_popup(window):
+            """Helper function to clean up and close the popup."""
+            palette.after_cancel(timer_id)  # Cancel the timer
+            window.grab_release()  # Release the grab
+            window.destroy()  # Destroy the window
+        
+        # Create close button ("X") in top-right corner
+        close_button = tk.Button(palette, text="X", font=(config.ha_large), bg=config.master_bg, fg='black',
+                                command=lambda: close_popup(palette))
+        close_button.place(x=total_width - close_button_size, y=1,
+                        width=close_button_size - 1, height=close_button_size - 1)
+        
+        #logger.debug("Popup palette created with 4 buttons and close button")
+        
+        # Keep references to images to prevent garbage collection
+        palette.pop_button_images = pop_button_images
+        
     def create_new_group_popup(parent, conn, cursor):                       # Win_ID = 23
         popup = tk.Toplevel(parent)
         popup.title("New Rule Group")
@@ -805,11 +1141,11 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
         popup.grab_set()
         win_id = 23
         open_form_with_position(popup, conn, cursor, win_id, "New Rule Group")
-        scaling_factor = popup.winfo_fpixels('1i') / 96
-        popup.geometry(f"{int(250 * scaling_factor)}x{int(150 * scaling_factor)}")
-        tk.Label(popup, text="Group Name:").place(x=20 * scaling_factor, y=20 * scaling_factor)
-        name_entry = tk.Entry(popup, width=30)
-        name_entry.place(x=20 * scaling_factor, y=50 * scaling_factor)
+        popup.geometry(f"{sc(300)}x{sc(150)}")
+        popup.configure(bg=config.master_bg)
+        tk.Label(popup, text="Enter Rule Group Name:", bg=config.master_bg, font=config.ha_normal).place(x=sc(30), y=sc(20))
+        name_entry = tk.Entry(popup, width=35)
+        name_entry.place(x=sc(30), y=sc(50))
         name_entry.focus_set()
 
         def save_group():
@@ -835,8 +1171,22 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
                 messagebox.showerror("Error", f"Failed to save Rule Group: {e}", parent=popup)
                 parent.lift()
 
-        tk.Button(popup, text="Save", command=save_group).place(x=80 * scaling_factor, y=100 * scaling_factor)
-        tk.Button(popup, text="Cancel", command=lambda: [close_form_with_position(popup, conn, cursor, win_id), parent.lift()]).place(x=160 * scaling_factor, y=100 * scaling_factor)
+        tk.Button(popup, text="Save", font=config.ha_button, width=10, command=save_group).place(x=sc(30), y=sc(100))
+        tk.Button(popup, text="Cancel", font=config.ha_button, bg=COLORS["exit_but_bg"], width=10, 
+                command=lambda: [close_form_with_position(popup, conn, cursor, win_id), parent.lift()]).place(x=sc(170), y=sc(100))
+
+    def renumber_group_sequences(conn, cursor):
+        """Renumber Group_Sequence in RuleGroups to ensure contiguous sequence."""
+        logger.debug("Renumbering Group_Sequence in RuleGroups")
+        try:
+            cursor.execute("SELECT Group_ID, Group_Sequence FROM RuleGroups WHERE Group_Enabled = 1 ORDER BY Group_Sequence")
+            groups = cursor.fetchall()
+            for index, (group_id, _) in enumerate(groups, start=1):
+                cursor.execute("UPDATE RuleGroups SET Group_Sequence = ? WHERE Group_ID = ?", (index, group_id))
+            conn.commit()
+            logger.debug(f"Renumbered {len(groups)} groups with contiguous Group_Sequence")
+        except Exception as e:
+            logger.error(f"Error renumbering Group_Sequence: {e}\n{traceback.format_exc()}")
 
     form.bind("<<RefreshRules>>", lambda e: refresh_rules())
     try:
@@ -844,10 +1194,12 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
         form.update_idletasks()
     except Exception as e:
         logger.error(f"Initial refresh_rules failed: {e}")
-        tk.Label(form, text=f"Error initializing rules: {e}", fg="red", bg="white", font=("Arial", 10)).place(x=20 * scaling_factor, y=100 * scaling_factor)
+        tk.Label(form, text=f"Error initializing rules: {e}", fg="red", bg="white", font=(config.ha_normal)).place(x=sc(20), y=100)
         form.update()
 
     return form
+
+
 
 
 

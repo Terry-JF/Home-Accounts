@@ -45,7 +45,7 @@ except Exception as e:
 # 13: create_compare_form - "Compare Current Year to Previous Year"
 # 14: show_maint_toolbox - "List Maintenance Forms"
 # 15: create_home_screen - "Home screen of HA"
-# 16: create_account_list_form - "List all Transactions for a single Account"
+# 16: create_account_list_form - "List all Transactions for a single Account" is in main.py
 # 17: create_edit_form - "New/Edit Transaction"
 ################################
 # 18: create_regular_transaction_form - "Regular Transaction Entry/Edit"
@@ -53,11 +53,15 @@ except Exception as e:
 # 20: create_monthly_focus_form - "Focus on Actual / Budget for given Month"    
 # 21: create_colour_scheme_maint_form - "Manage Colour Scheme"                  
 # 22: create_rules_form - "Manage Rule"
-# 23: create_new_group_popup - "New Rule Group"                                
-# 24: edit_rule_form - "Edit Rule"
-# 25: create_gocardless_maint_form
+# 23: create_new_group_popup - "New Rule Group" popup in gui_maint_rules.py                           
+# 24: edit_rule_form - "Edit Rule" in gui_maint_rules.py  
+# 25: create_gocardless_maint_form in gc_utils.py  
+# 26: edit_group_name - Edit Rule Group name popup in gui_maint_rules.py
+# 27: delete_rule_group - Delete Rule Group confirmation popup window in gui_maint_rules.py
+# 28: show_history - Transaction History form on Edit Transaction
 
-# Next free ID: 26
+
+# Next free ID: 29
 
 # Maintenence forms
 
@@ -65,28 +69,29 @@ def create_account_maint_form(parent, conn, cursor, root=None):         # Win_ID
     form = tk.Toplevel(parent, bg=config.master_bg)
     win_id = 1
     open_form_with_position(form, conn, cursor, win_id, "Manage Accounts")
-    scaling_factor = parent.winfo_fpixels('1i') / 96
-    form.geometry(f"{int(1100 * scaling_factor)}x{int(800 * scaling_factor)}")
+    form.geometry(f"{sc(1100)}x{sc(800)}")
     form.transient(parent)
     form.attributes("-topmost", True)
     form.option_add("*TCombobox*Listbox*Font", config.ha_normal)  # set font size for Combobox dropdown list
 
     # Prepare to use custom checkbox
     prev_checkbox_var = tk.IntVar(value=0)
-    unchecked_img = tk.PhotoImage(file=resource_path("icons/unchecked_16.png")).zoom(int(scaling_factor))
-    checked_img = tk.PhotoImage(file=resource_path("icons/checked_16.png")).zoom(int(scaling_factor))
+    unchecked_img = tk.PhotoImage(file=resource_path("icons/unchecked_16.png")).zoom(int(sc(1)))
+    checked_img = tk.PhotoImage(file=resource_path("icons/checked_16.png")).zoom(int(sc(1)))
     
     # Year Combobox
-    tk.Label(form, text="Select Year:", font=(config.ha_head12), bg=config.master_bg).place(x=int(20 * scaling_factor), y=int(20 * scaling_factor))
+    tk.Label(form, text="Select Year:", font=(config.ha_head12), bg=config.master_bg).place(x=sc(20), y=sc(20))
     year_var = tk.StringVar()
     years = fetch_years(cursor)
-    year_combo = ttk.Combobox(form, textvariable=year_var, values=years, width=10, state="readonly", font=(config.ha_normal))
-    year_combo.place(x=int(120 * scaling_factor), y=int(20 * scaling_factor))
+    year_combo = ttk.Combobox(form, textvariable=year_var, values=years, width=8, state="readonly", font=(config.ha_normal))
+    year_combo.place(x=sc(120), y=sc(20))
     year_combo.set(str(datetime.now().year))
 
     # Treeview
-    tree = ttk.Treeview(form, columns=("SEQ", "Type", "Name", "Short", "Last4", "Credit", "Colour", "Open", "Stmt", "Prev"), show="headings", height=16)
-    tree.place(x=int(20 * scaling_factor), y=int(60 * scaling_factor), width=int(1060 * scaling_factor))
+    tree = ttk.Treeview(form, columns=("SEQ", "Type", "Name", "Short", "Last4", "Credit", "Colour", "Open", "Stmt", "Prev"),
+                        show="headings", height=14, style="Treeview")
+    tree.place(x=sc(20), y=sc(60), width=sc(1060))
+    tree.tag_configure("normal", font=(config.ha_normal))
     tree.heading("SEQ", text="SEQ")
     tree.heading("Type", text="Account Type")
     tree.heading("Name", text="Account Name")
@@ -97,8 +102,8 @@ def create_account_maint_form(parent, conn, cursor, root=None):         # Win_ID
     tree.heading("Open", text="Open Bal")
     tree.heading("Stmt", text="Stat. Date")
     tree.heading("Prev", text="Prev. Month")
-    tree.column("SEQ", width=50)
-    tree.column("Type", width=100)
+    tree.column("SEQ", width=30, anchor="center")
+    tree.column("Type", width=120)
     tree.column("Name", width=200)
     tree.column("Short", width=100)
     tree.column("Last4", width=80, anchor="center")
@@ -110,12 +115,16 @@ def create_account_maint_form(parent, conn, cursor, root=None):         # Win_ID
 
     # Mappings
     acc_types = fetch_lookup_values(cursor, 5)
-    type_map = {i + 1: desc for i, desc in enumerate(acc_types)}
-    reverse_type_map = {desc: i + 1 for i, desc in enumerate(acc_types)}
+    logger.debug(f"mappings: acc_types: {acc_types}")
+    type_map = {i: desc for i, desc in acc_types}
+    #logger.debug(f"type_map: {type_map}")
+    reverse_type_map = {desc: i for i, desc in acc_types}
     colour_map = {0: "Grey", 1: "Purple", 2: "Blue", 3: "Pink", 4: "Green"}
     reverse_colour_map = {v: k for k, v in colour_map.items()}
 
     def populate_tree(year):
+        tags = []
+        tags.append("normal")
         for item in tree.get_children():
             tree.delete(item)
         accounts = fetch_accounts_by_year(cursor, year)
@@ -140,18 +149,19 @@ def create_account_maint_form(parent, conn, cursor, root=None):         # Win_ID
                 return
         for acc in accounts:
             acc_id, acc_type, name, short, last4, credit, colour, open_bal, stmt_date, prev = acc
+            #logger.debug(f"acc_type: {acc_type}")
             tree.insert("", "end", values=(
                 acc_id,
                 type_map.get(acc_type, str(acc_type)),
-                name,
-                short,
+                "   " + name,
+                "   " + short,
                 last4,
-                f"{int(credit):,}" if credit else "0",
+                f"{int(credit):,}   " if credit else "0   ",
                 colour_map.get(colour, str(colour)),
-                f"{open_bal:.2f}" if open_bal else "0.00",
+                f"{open_bal:.2f}   " if open_bal else "0.00   ",
                 stmt_date if stmt_date else "",
                 "Yes" if prev else ""
-            ))
+            ), tags=tags)
 
     def init_form():
         if year_var.get():
@@ -161,51 +171,51 @@ def create_account_maint_form(parent, conn, cursor, root=None):         # Win_ID
     init_form()
 
     # Buttons above fields
-    tk.Button(form, text="Amend Selected Account", width=28, font=(config.ha_button), command=lambda: amend_account()).place(x=int(250 * scaling_factor), y=int(440 * scaling_factor))
+    tk.Button(form, text="Amend Selected Account", width=28, font=(config.ha_button), command=lambda: amend_account()).place(x=sc(250), y=sc(400))
     tk.Button(form, text="Bring Forward Opening Balances", width=28, font=(config.ha_button), 
-            command=lambda: bring_forward_handler()).place(x=int(650 * scaling_factor), y=int(440 * scaling_factor))
+            command=lambda: bring_forward_handler()).place(x=sc(650), y=sc(400))
 
     # Left Side Fields
-    tk.Label(form, text="Account Type:", anchor="e", width=20, font=(config.ha_normal), bg=config.master_bg).place(x=int(80 * scaling_factor), y=int(500 * scaling_factor))
+    tk.Label(form, text="Account Type:", anchor="e", width=20, font=(config.ha_normal), bg=config.master_bg).place(x=sc(80), y=sc(500))
     type_var = tk.StringVar()
     type_combo = ttk.Combobox(form, textvariable=type_var, values=list(type_map.values()), state="readonly", width=15, font=(config.ha_normal))
-    type_combo.place(x=int(250 * scaling_factor), y=int(500 * scaling_factor))
+    type_combo.place(x=sc(250), y=sc(500))
 
-    tk.Label(form, text="Account Name:", anchor="e", width=20, font=(config.ha_normal), bg=config.master_bg).place(x=int(80 * scaling_factor), y=int(540 * scaling_factor))
+    tk.Label(form, text="Account Name:", anchor="e", width=20, font=(config.ha_normal), bg=config.master_bg).place(x=sc(80), y=sc(540))
     name_entry = tk.Entry(form, width=30, font=(config.ha_normal))
-    name_entry.place(x=int(250 * scaling_factor), y=int(540 * scaling_factor))
+    name_entry.place(x=sc(250), y=sc(540))
 
-    tk.Label(form, text="Account Short Name:", anchor="e", width=20, font=(config.ha_normal), bg=config.master_bg).place(x=int(80 * scaling_factor), y=int(580 * scaling_factor))
+    tk.Label(form, text="Account Short Name:", anchor="e", width=20, font=(config.ha_normal), bg=config.master_bg).place(x=sc(80), y=sc(580))
     short_entry = tk.Entry(form, width=15, font=(config.ha_normal))
-    short_entry.place(x=int(250 * scaling_factor), y=int(580 * scaling_factor))
+    short_entry.place(x=sc(250), y=sc(580))
 
-    tk.Label(form, text="Account Last 4 Numbers:", anchor="e", width=20, font=(config.ha_normal), bg=config.master_bg).place(x=int(80 * scaling_factor), y=int(620 * scaling_factor))
+    tk.Label(form, text="Account Last 4 Numbers:", anchor="e", width=20, font=(config.ha_normal), bg=config.master_bg).place(x=sc(80), y=sc(620))
     last4_entry = tk.Entry(form, width=8, font=(config.ha_normal))
-    last4_entry.place(x=int(250 * scaling_factor), y=int(620 * scaling_factor))
+    last4_entry.place(x=sc(250), y=sc(620))
 
     # Right Side Fields
-    tk.Label(form, text="Account Credit Limit:", anchor="e", width=20, font=(config.ha_normal), bg=config.master_bg).place(x=int(560 * scaling_factor), y=int(500 * scaling_factor))
+    tk.Label(form, text="Account Credit Limit:", anchor="e", width=20, font=(config.ha_normal), bg=config.master_bg).place(x=sc(560), y=sc(500))
     credit_entry = tk.Entry(form, width=15, font=(config.ha_normal))
-    credit_entry.place(x=int(730 * scaling_factor), y=int(500 * scaling_factor))
+    credit_entry.place(x=sc(730), y=sc(500))
 
-    tk.Label(form, text="Account Display Colour:", anchor="e", width=20, font=(config.ha_normal), bg=config.master_bg).place(x=int(560 * scaling_factor), y=int(540 * scaling_factor))
+    tk.Label(form, text="Account Display Colour:", anchor="e", width=20, font=(config.ha_normal), bg=config.master_bg).place(x=sc(560), y=sc(540))
     colour_var = tk.StringVar()
     colour_combo = ttk.Combobox(form, textvariable=colour_var, values=list(colour_map.values()), width=15, font=(config.ha_normal))
-    colour_combo.place(x=int(730 * scaling_factor), y=int(540 * scaling_factor))
+    colour_combo.place(x=sc(730), y=sc(540))
 
-    tk.Label(form, text="Account Opening Balance:", anchor="e", width=20, font=(config.ha_normal), bg=config.master_bg).place(x=int(560 * scaling_factor), y=int(580 * scaling_factor))
+    tk.Label(form, text="Account Opening Balance:", anchor="e", width=20, font=(config.ha_normal), bg=config.master_bg).place(x=sc(560), y=sc(580))
     open_entry = tk.Entry(form, width=15, font=(config.ha_normal))
-    open_entry.place(x=int(730 * scaling_factor), y=int(580 * scaling_factor))
+    open_entry.place(x=sc(730), y=sc(580))
 
-    tk.Label(form, text="Statement Date:", anchor="e", width=20, font=(config.ha_normal), bg=config.master_bg).place(x=int(560 * scaling_factor), y=int(620 * scaling_factor))
+    tk.Label(form, text="Statement Date:", anchor="e", width=20, font=(config.ha_normal), bg=config.master_bg).place(x=sc(560), y=sc(620))
     stmt_var = tk.StringVar()
     stmt_combo = ttk.Combobox(form, textvariable=stmt_var, values=[str(i) for i in range(1, 32)], width=5, font=(config.ha_normal))
-    stmt_combo.place(x=int(730 * scaling_factor), y=int(620 * scaling_factor))
+    stmt_combo.place(x=sc(730), y=sc(620))
 
     tk.Label(form, text="Tick if statement Date is in previous\n month from payment date", anchor=tk.W, width=30, 
-             font=(config.ha_note), bg=config.master_bg).place(x=int(825 * scaling_factor), y=int(618 * scaling_factor))
+            font=(config.ha_note), bg=config.master_bg).place(x=sc(825), y=sc(618))
     prev_box = tk.Button(form, image=unchecked_img, command=lambda: toggle_prev())
-    prev_box.place(x=int(800 * scaling_factor), y=int(623 * scaling_factor))
+    prev_box.place(x=sc(800), y=sc(623))
 
     def toggle_prev():
         #logger.debug(f"prev_checkbox_var before toggle: {prev_var.get()}")
@@ -218,10 +228,10 @@ def create_account_maint_form(parent, conn, cursor, root=None):         # Win_ID
         #logger.debug(f"prev_checkbox_var after toggle: {prev_var.get()}")
 
     # Bottom Buttons
-    tk.Button(form, text="Cancel", width=15, command=lambda: clear_fields()).place(x=int(20 * scaling_factor), y=int(750 * scaling_factor))
-    tk.Button(form, text="Save", width=15, command=lambda: save_account()).place(x=int(450 * scaling_factor), y=int(750 * scaling_factor))
-    tk.Button(form, text="Close", width=15, 
-              command=lambda: close_form_with_position(form, conn, cursor, win_id)).place(x=int(900 * scaling_factor), y=int(750 * scaling_factor))
+    tk.Button(form, text="Cancel", width=20, font=(config.ha_button), command=lambda: clear_fields()).place(x=sc(100), y=sc(740))
+    tk.Button(form, text="Save", width=20, font=(config.ha_button), command=lambda: save_account()).place(x=sc(450), y=sc(740))
+    tk.Button(form, text="Close", width=20, font=(config.ha_button), bg=COLORS["exit_but_bg"], 
+            command=lambda: close_form_with_position(form, conn, cursor, win_id)).place(x=sc(820), y=sc(740))
 
     def amend_account():
         selection = tree.selection()
@@ -229,9 +239,9 @@ def create_account_maint_form(parent, conn, cursor, root=None):         # Win_ID
             values = tree.item(selection[0], "values")
             type_var.set(values[1])
             name_entry.delete(0, tk.END)
-            name_entry.insert(0, values[2])
+            name_entry.insert(0, values[2].lstrip())
             short_entry.delete(0, tk.END)
-            short_entry.insert(0, values[3])
+            short_entry.insert(0, values[3].lstrip())
             last4_entry.delete(0, tk.END)
             last4_entry.insert(0, values[4])
             credit_entry.delete(0, tk.END)
@@ -260,6 +270,7 @@ def create_account_maint_form(parent, conn, cursor, root=None):         # Win_ID
         try:
             year = int(year_var.get())
             acc_type = reverse_type_map.get(type_var.get(), 0)
+            logger.debug(f"type_var: {type_var.get()}, acc_type: {acc_type}")
             name = name_entry.get().strip()
             short = short_entry.get().strip()
             last4 = last4_entry.get().strip() or ""
@@ -349,18 +360,17 @@ def create_category_maint_form(parent, conn, cursor):                   # Win_ID
             command=lambda: close_form_with_position(form, conn, cursor, win_id)).pack(pady=10)
     form.wait_window()
 
-def create_colour_scheme_maint_form(parent, conn, cursor):              # Win_ID = 21
+def create_colour_scheme_maint_form(parent, conn, cursor, refresh_callback=None):              # Win_ID = 21
     form = tk.Toplevel(parent, bg=config.master_bg)
     win_id = 21
     open_form_with_position(form, conn, cursor, win_id, "Colours Maintenance")
-    scaling_factor = form.winfo_fpixels('1i') / 96
-    form.geometry(f"{int(1000 * scaling_factor)}x{int(900 * scaling_factor)}")
+    form.geometry(f"{sc(1000)}x{sc(900)}")
     form.resizable(False, False)
     form.attributes("-topmost", True)
     form.configure(bg=config.master_bg)
     form.grab_set()
 
-    logger.debug(f"Colours Maintenance form size: width={int(1000 * scaling_factor)}, height={int(900 * scaling_factor)}")
+    logger.debug(f"Colours Maintenance form size: width={sc(1000)}, height={sc(900)}")
     logger.debug(f"Tkinter version: {tk.TkVersion}")
     logger.debug(f"Current theme: {ttk.Style().theme_use()}")
 
@@ -372,17 +382,38 @@ def create_colour_scheme_maint_form(parent, conn, cursor):              # Win_ID
         "Complete Transaction - Weekend", "Pending Transaction - Weekend", "Forecast Transaction - Weekend",
         "Daily Totals Row", "Over-Limit Daily Totals Row", "Not Selected Tab", "Selected Tab",
         "Active Button", "Active Button Highlighted", "Last Statement Balance Row",
-        "AHB Header Row", "Transaction Form Header Row", "Title/Header 3 Row", "Exit/Close Buttons", "Delete Buttons"
+        "Title1 - EOM Summary Header Row", "Title2 - Transaction List Header Row", "Title3 Row", "Exit/Close Buttons", "Delete Buttons"
     ]
 
-    # Store current colors and Lup_Seqs from DB
+    color_map = {
+        "home_bg": (2, 1), "home_test_bg": (2, 2), "flag_y_bg": (2, 3), "flag_g_bg": (2, 4), "flag_b_bg": (2, 5),
+        "flag_dd_bg": (2, 6), "flag_mk_bg": (2, 7), "tran_wk_bg": (2, 8), "tran_we_bg": (2, 9), "dtot_bg": (2, 10),
+        "dtot_ol_bg": (2, 11), "tab_bg": (2, 12), "tab_act_bg": (2, 13), "act_but_bg": (2, 14), "act_but_hi_bg": (2, 15),
+        "last_stat_bg": (2, 16), "title1_bg": (2, 17), "title2_bg": (2, 18), "title3_bg": (2, 19), "exit_but_bg": (2, 20),
+        "del_but_bg": (2, 21), "normal_tx": (3, 1), "disabled_tx": (3, 2), "complete_tx": (3, 3), "pending_tx": (3, 4),
+        "forecast_tx": (3, 5), "dtot_tx": (3, 6), "dtot_ol_tx": (3, 7), "tab_tx": (3, 8), "tab_act_tx": (3, 9),
+        "act_but_tx": (3, 10), "act_but_hi_tx": (3, 11), "last_stat_tx": (3, 12), "title1_tx": (3, 13), "title2_tx": (3, 14),
+        "title3_tx": (3, 15), "exit_but_tx": (3, 16), "del_but_tx": (3, 17)
+    }
+
+    # Load current colors from COLORS dict, allows user to experiment with current settings
     colors = {}
-    for lup_type_id in (2, 3):
-        lookup_values = fetch_lookup_values(cursor, lup_type_id)
-        for lup_seq, lup_desc in lookup_values:
-            color_value = lup_desc.replace("0x", "#") if lup_desc.startswith("0x") else lup_desc
-            colors[(lup_type_id, lup_seq)] = {"color": color_value}
-            logger.debug(f"Loaded color: Lup_LupT_ID={lup_type_id}, Lup_Seq={lup_seq}, Color={color_value}")
+    lup_type_id = 2
+    for i in range(21):
+        key = [(k, v) for k, v in color_map.items() if v == (lup_type_id, i+1)]
+        if key:
+            colors[(lup_type_id, i+1)] = COLORS[key[0][0]]
+        else:
+            logger.warning(f"No color map entry for Lup_LupT_ID={lup_type_id}, Lup_Seq={i+1}")
+    lup_type_id = 3
+    for i in range(17):
+        key = [(k, v) for k, v in color_map.items() if v == (lup_type_id, i+1)]
+        if key:
+            colors[(lup_type_id, i+1)] = COLORS[key[0][0]]
+        else:
+            logger.warning(f"No color map entry for Lup_LupT_ID={lup_type_id}, Lup_Seq={i+1}")
+    logger.debug(f"colors dict: {colors}")
+    logger.debug("COLORS loaded into colors dict")
 
     # Create UI elements using grid
     entries = []
@@ -390,150 +421,160 @@ def create_colour_scheme_maint_form(parent, conn, cursor):              # Win_ID
     text_buttons = []
 
     # Column headers
-    tk.Label(form, text="Background", font=(config.ha_head11), bg=config.master_bg).grid(row=0, column=2, padx=int(20 * scaling_factor), pady=10, sticky="ew")
-    tk.Label(form, text="Text", font=(config.ha_head11), bg=config.master_bg).grid(row=0, column=3, padx=int(20 * scaling_factor), pady=10, sticky="ew")
+    tk.Label(form, text="Background", font=(config.ha_head11), bg=config.master_bg).grid(row=0, column=2, padx=sc(20), pady=10, sticky="ew")
+    tk.Label(form, text="Text", font=(config.ha_head11), bg=config.master_bg).grid(row=0, column=3, padx=sc(20), pady=10, sticky="ew")
     logger.debug("Created column headers")
 
     # Create rows
     for i, label_text in enumerate(labels):
         # Label
-        tk.Label(form, text=label_text, font=(config.ha_normal), bg=config.master_bg, anchor="e", width=30).grid(row=i+1, column=0, padx=int(20 * scaling_factor), pady=2, sticky="e")
+        tk.Label(form, text=label_text, font=(config.ha_normal), bg=config.master_bg, anchor="e", width=30).grid(row=i+1, column=0, padx=sc(20), pady=2, sticky="e")
         
         # Entry
         entry = tk.Entry(form, font=(config.ha_normal), bg=config.master_bg, width=30, justify="center")
         entry.insert(0, " TEST TEXT 123.45 678.90 ")
         entry.config(state="readonly")
-        entry.grid(row=i+1, column=1, padx=int(20 * scaling_factor), pady=2, sticky="w")
+        entry.grid(row=i+1, column=1, padx=sc(20), pady=2, sticky="w")
         entries.append(entry)
         logger.debug(f"Created entry for row {i}: row={i+1}, column=1")
 
         # Background button
         if i <= 6 or i >= 13 or i == 8 or i == 11:  # Rows 0-6, 13-24, weekday (8), weekend (11)
             bg_btn = tk.Button(form, text="Select Colour", font=(config.ha_button), width=17, command=lambda idx=i: select_color(idx, 0))
-            bg_btn.grid(row=i+1, column=2, padx=int(20 * scaling_factor), pady=2, sticky="ew")
+            bg_btn.grid(row=i+1, column=2, padx=sc(20), pady=2, sticky="ew")
             bg_buttons.append(bg_btn)
             logger.debug(f"Created background button for row {i}")
         else:
             bg_buttons.append(None)
 
         # Text button
-        if i >= 7:  # Rows 7-24
+        if i in (7, 8, 9) or i >= 13:  # Rows 7, 8, 9 and 13-24
             text_btn = tk.Button(form, text="Select Colour", font=(config.ha_button), width=17, command=lambda idx=i: select_color(idx, 1))
-            text_btn.grid(row=i+1, column=3, padx=int(20 * scaling_factor), pady=2, sticky="ew")
+            text_btn.grid(row=i+1, column=3, padx=sc(20), pady=2, sticky="ew")
             text_buttons.append(text_btn)
             logger.debug(f"Created text button for row {i}")
         else:
             text_buttons.append(None)
 
     # Bottom buttons
-    tk.Button(form, text="Close", font=(config.ha_button), width=15, command=lambda: close_form_with_position(form, conn, cursor, win_id)).place(x=int(150 * scaling_factor), y=int(830 * scaling_factor), width=int(150 * scaling_factor), height=int(35 * scaling_factor))
-    tk.Button(form, text="Reset All to Defaults", font=(config.ha_button), width=30, command=lambda: reset_colors()).place(x=int(350 * scaling_factor), y=int(830 * scaling_factor), width=int(300 * scaling_factor), height=int(35 * scaling_factor))
-    tk.Button(form, text="Save", font=(config.ha_button), width=15, command=lambda: save_colors()).place(x=int(700 * scaling_factor), y=int(830 * scaling_factor), width=int(150 * scaling_factor), height=int(35 * scaling_factor))
+    save_btn = tk.Button(form, text="Save", font=(config.ha_button), width=15, command=lambda: save_colors())
+    save_btn.place(x=sc(100), y=sc(830), width=sc(150), height=sc(35))
+    ### Under construction ###
+    apply_btn = tk.Button(form, text="Apply", font=(config.ha_button), width=15, command=lambda: apply_colors(refresh_callback))
+    apply_btn.place(x=sc(300), y=sc(830), width=sc(150), height=sc(35))
+    
+    reset_btn = tk.Button(form, text="Reset All to Defaults", font=(config.ha_button), width=30, command=lambda: reset_colors())
+    reset_btn.place(x=sc(500), y=sc(830), width=sc(200), height=sc(35))
+    close_btn = tk.Button(form, text="Close", font=(config.ha_button), bg=COLORS["exit_but_bg"], width=15, command=lambda: close_form_with_position(form, conn, cursor, win_id))
+    close_btn.place(x=sc(750), y=sc(830), width=sc(150), height=sc(35))
     logger.debug("Created bottom buttons")
 
     def select_color(row_idx, bk_txt):
-        lup_type_id = 2 if row_idx <= 12 else 3
-        lup_seq = row_idx + 1 if row_idx <= 6 else (8 if row_idx in [7, 8, 9] else (9 if row_idx in [10, 11, 12] else row_idx - 2))
-        current_color = colors.get((lup_type_id, lup_seq), {"color": DEFAULT_COLORS[list(color_map.keys())[row_idx]]})["color"]
+        if bk_txt == 0:                     # background colour
+            lup_type_id = 2 
+            if row_idx <= 6:
+                lup_seq = row_idx + 1
+            elif row_idx == 8:              # weekday background
+                lup_seq = row_idx
+            elif row_idx == 11:             # weekday background
+                lup_seq = row_idx - 2
+            elif row_idx >= 13:
+                lup_seq = row_idx - 3
+        else:
+            lup_type_id = 3                 # text colour
+            if row_idx in (7, 8, 9):
+                lup_seq = row_idx - 4
+            elif row_idx >= 13:
+                lup_seq = row_idx - 7
+        
+        current_color = colors[lup_type_id, lup_seq]
         color = colorchooser.askcolor(color=current_color, title=f"Select {'Background' if bk_txt == 0 else 'Text'} Color", parent=form)
         if color[1]:
-            colors[(lup_type_id, lup_seq)] = {"color": color[1]}
-            if bk_txt == 0:
-                if row_idx in [7, 8, 9]:  # Weekday group
-                    for r in [7, 8, 9]:
-                        entries[r].config(readonlybackground=color[1])
-                        logger.debug(f"Set background color for row {r}: {color[1]}")
-                elif row_idx in [10, 11, 12]:  # Weekend group
-                    for r in [10, 11, 12]:
-                        entries[r].config(readonlybackground=color[1])
-                        logger.debug(f"Set background color for row {r}: {color[1]}")
-                else:
-                    entries[row_idx].config(readonlybackground=color[1])
-                    logger.debug(f"Set background color for row {row_idx}: {color[1]}")
-            else:
-                entries[row_idx].config(fg=color[1])
-                logger.debug(f"Set foreground color for row {row_idx}: {color[1]}")
-            entries[row_idx].update()
-            logger.debug(f"Color selected: row={row_idx}, type={'background' if bk_txt == 0 else 'text'}, color={color[1]}")
+            colors[(lup_type_id, lup_seq)] = color[1]
+        logger.debug(f"Color selected: lup_type_id={lup_type_id}, lup_seq={lup_seq}, type={'background' if bk_txt == 0 else 'text'}, color={color[1]}")
+        update_entries()    
 
     def reset_colors():
-        COLORS.update(DEFAULT_COLORS)
-        colors.clear()
-        form_keys = list(color_map.keys())
-        for i, key in enumerate(form_keys):
-            lup_type_id = 2 if i <= 20 else 3
-            lup_seq = i + 1 if i <= 20 else i - 18
-            colors[(lup_type_id, lup_seq)] = {"color": DEFAULT_COLORS[key]}
-            logger.debug(f"reset_colors - lup_type_id={lup_type_id}, lup_seq={lup_seq}, key={key}")
+        # Copies the default colours to the colors dict, these will then show on the form - not saved anywhere
+        #COLORS.update(DEFAULT_COLORS)
+        for lup_type_id, lup_seq in colors:
+            key = [(k, v) for k, v in color_map.items() if v == (lup_type_id, lup_seq)]
+            if key:
+                colors[(lup_type_id, lup_seq)] = DEFAULT_COLORS[key[0][0]]
+            else:
+                logger.warning(f"No color map entry for Lup_LupT_ID={lup_type_id}, Lup_Seq={lup_seq}")
         update_entries()
-        messagebox.showinfo("Success", "            Colors reset to defaults.\nHit Save if you want to make these permanent", parent=form)
         logger.debug("Colors reset to defaults (locally - not saved)")
 
     def save_colors():
+        # Saves the colors dict to the database Lookups, these will then load on next restart of app
         try:
             for (lup_type_id, lup_seq), value in colors.items():
-                cursor.execute("SELECT Lup_ID FROM Lookups WHERE Lup_LupT_ID = ? AND Lup_Seq = ?", (lup_type_id, lup_seq))
-                result = cursor.fetchone()
-                if result:
-                    lup_id = result[0]
-                    update_lookup_color(cursor, conn, lup_seq, lup_type_id, value["color"])
-                else:
-                    logger.warning(f"No record found to update for Lup_LupT_ID={lup_type_id}, Lup_Seq={lup_seq}")
+                logger.debug(f"lup_type_id= {lup_type_id}, lup_seq= {lup_seq}, value= {value}")
+                update_lookup_color(cursor, conn, lup_seq, lup_type_id, value)
             conn.commit()
-            messagebox.showinfo("Success", "            Colors saved successfully.\nYou must exit and reload HA for these to take effect", parent=form)
+            messagebox.showinfo("Success", "Colors saved successfully", parent=form)
             logger.debug("Colors saved to Lookups table")
         except Exception as e:
             logger.error(f"Failed to save colors: {e}")
             messagebox.showerror("Error", f"Failed to save colors: {e}", parent=form)
-
-    def update_entries():
-        for i in range(len(labels)):
-            entry = entries[i]
-            entry.config(state="normal")
-            entry.delete(0, tk.END)
-            entry.insert(0, " TEST TEXT 123.45 678.90 ")
-            entry.config(state="readonly")
+            
+    def apply_colors(refresh_callback):
+        """Saves the colors dict back to the COLORS dict, applying to the current app without saving to DB."""
+        for lup_type_id, lup_seq in colors:
+            # Find the COLORS key that maps to (lup_type_id, lup_seq) in color_map
+            for color_key, color_tuple in color_map.items():
+                if color_tuple == (lup_type_id, lup_seq):
+                    COLORS[color_key] = colors[(lup_type_id, lup_seq)]
+                    logger.debug(f"Updated COLORS[{color_key}] = {colors[(lup_type_id, lup_seq)]}")
+                    break
+            else:
+                logger.warning(f"No color_map entry for Lup_LupT_ID={lup_type_id}, Lup_Seq={lup_seq}")
+        
+        logger.debug("COLORS updated with colors dict")
+        logger.debug(f"COLORS: {COLORS}")
+        logger.debug("apply_colors called")
+        
+        # Trigger the home form's refresh
+        if refresh_callback:
+            refresh_callback()
+            logger.debug("Refresh callback triggered")        
+        
+    def update_entries():       # uses COLORS dictionary to set entries[] background and foreground colours
+        lup_type_id = 2
+        for i in range(25):     # loads all background colours to entry fields
             if i <= 6:
-                lup_type_id, lup_seq = 2, i + 1
-                bg_color = colors.get((lup_type_id, lup_seq), {"color": COLORS[list(color_map.keys())[i]]})["color"]
-                entry.config(readonlybackground=bg_color, fg="#000000")
-                logger.debug(f"Row {i}: Set bg={bg_color}, fg=#000000")
-            elif i in [7, 8, 9]:  # Weekday group
-                lup_type_id, lup_seq = 2, 8  # tran_wk_bg
-                bg_color = colors.get((lup_type_id, lup_seq), {"color": COLORS["tran_wk_bg"]})["color"]
-                fg_lup_seq = {7: 3, 8: 4, 9: 5}[i]  # complete_tx, pending_tx, forecast_tx
-                fg_color = colors.get((3, fg_lup_seq), {"color": COLORS[list(color_map.keys())[fg_lup_seq - 1]]})["color"]
-                entry.config(readonlybackground=bg_color, fg=fg_color)
-                logger.debug(f"Row {i}: Set bg={bg_color}, fg={fg_color}")
-            elif i in [10, 11, 12]:  # Weekend group
-                lup_type_id, lup_seq = 2, 9  # tran_we_bg
-                bg_color = colors.get((lup_type_id, lup_seq), {"color": COLORS["tran_we_bg"]})["color"]
-                fg_lup_seq = {10: 3, 11: 4, 12: 5}[i]  # complete_tx, pending_tx, forecast_tx
-                fg_color = colors.get((3, fg_lup_seq), {"color": COLORS[list(color_map.keys())[fg_lup_seq - 1]]})["color"]
-                logger.debug(f"Row {i}: Set bg={bg_color}, fg={fg_color}")
-                entry.config(readonlybackground=bg_color, fg=fg_color)
-                #ogger.debug(f"Row {i}: Set bg={bg_color}, fg={fg_color}")
-            else:  # Rows 13-24
-                lup_type_id_bg, lup_seq_bg = 2, i - 3
-                lup_type_id_fg, lup_seq_fg = 3, i - 7
-                bg_color = colors.get((lup_type_id_bg, lup_seq_bg), {"color": COLORS[list(color_map.keys())[lup_seq_bg - 1]]})["color"]
-                fg_color = colors.get((lup_type_id_fg, lup_seq_fg), {"color": COLORS[list(color_map.keys())[lup_seq_fg + 8]]})["color"]
-                entry.config(readonlybackground=bg_color, fg=fg_color)
-                logger.debug(f"Row {i}: Set bg={bg_color}, fg={fg_color}")
-            entry.update()
+                entries[i].config(readonlybackground=colors[lup_type_id, i+1])
+                temp=colors[(lup_type_id, i+1)]
+                logger.debug(f"update_entries bg - entries[{i}]: colors: {temp}")
+            elif i in (7, 8, 9):
+                entries[i].config(readonlybackground=colors[lup_type_id, 8])
+                temp=colors[(lup_type_id, 8)]
+                logger.debug(f"update_entries bg - entries[{i}]: colors:{temp}")
+            elif i in (10, 11, 12):
+                entries[i].config(readonlybackground=colors[lup_type_id, 9])
+                temp=colors[(lup_type_id, 9)]
+                logger.debug(f"update_entries bg - entries[{i}]: colors:{temp}")
+            elif i >= 13:
+                entries[i].config(readonlybackground=colors[lup_type_id, i-3])
+                temp=colors[(lup_type_id, i-3)]
+                logger.debug(f"update_entries bg - entries[{i}]: colors:{temp}")
+        lup_type_id = 3
+        for i in range(17):     # load all foreground colours into entry fields
+            if i in (0, 1):
+                logger.debug(f"first 2 text colors [{i}]: skipped")
+            if i in (2, 3, 4):
+                entries[i+5].config(fg=colors[lup_type_id, i+1])
+                entries[i+8].config(fg=colors[lup_type_id, i+1])
+                temp=colors[(lup_type_id, i+1)]
+                logger.debug(f"update_entries fg - entries[{i+5}] + [{i+8}]: colors:{temp}")
+            if i >= 5:
+                entries[i+8].config(fg=colors[(lup_type_id, i+1)])
+                temp=colors[(lup_type_id, i+1)]
+                logger.debug(f"update_entries fg - entries[{i+8}]: colors:{temp}")
+        entries[i].update()
         logger.debug("Entries updated with current colors")
-        logger.debug(f"Colors dictionary: {colors}")
-
-    color_map = {
-        "home_bg": (2, 1), "home_test_bg": (2, 2), "flag_y_bg": (2, 3), "flag_g_bg": (2, 4), "flag_b_bg": (2, 5),
-        "flag_dd_bg": (2, 6), "flag_mk_bg": (2, 7), "tran_wk_bg": (2, 8), "tran_we_bg": (2, 9), "dtot_bg": (2, 10),
-        "dtot_ol_bg": (2, 11), "tab_bg": (2, 12), "tab_act_bg": (2, 13), "act_but_bg": (2, 14), "act_but_hi_bg": (2, 15),
-        "last_stat_bg": (2, 16), "title1_bg": (2, 17), "title2_bg": (2, 18), "title3_bg": (2, 19), "exit_but_bg": (2, 20),
-        "del_but_bg": (2, 21), "complete_tx": (3, 3), "pending_tx": (3, 4), "forecast_tx": (3, 5), "dtot_tx": (3, 6),
-        "dtot_ol_tx": (3, 7), "tab_tx": (3, 8), "tab_act_tx": (3, 9), "act_but_tx": (3, 10), "act_but_hi_tx": (3, 11),
-        "last_stat_tx": (3, 12), "title1_tx": (3, 13), "title2_tx": (3, 14), "title3_tx": (3, 15), "exit_but_tx": (3, 16),
-        "del_but_tx": (3, 17)
-    }
+        #logger.debug(f"Colors dictionary: {colors}")
 
     update_entries()
     form.wait_window()
@@ -572,12 +613,16 @@ def create_form_positions_maint_form(parent, conn, cursor):             # Win_ID
     form = tk.Toplevel(parent)
     win_id = 8
     open_form_with_position(form, conn, cursor, win_id, "Manage Form Window Positions")
-    scaling_factor = parent.winfo_fpixels('1i') / 96
-    form.geometry(f"{int(800 * scaling_factor)}x{int(600 * scaling_factor)}")
+    form.geometry(f"{sc(800)}x{sc(600)}")
+    form.config(bg=config.master_bg)
+
+    # Treeview styling
+    style = ttk.Style()
+    style.configure("Treeview", font=(config.ha_normal))
 
     # Treeview
-    tree = ttk.Treeview(form, columns=("ID", "Name", "Left", "Top"), show="headings", height=10)
-    tree.place(x=int(20 * scaling_factor), y=int(20 * scaling_factor), width=int(760 * scaling_factor))
+    tree = ttk.Treeview(form, columns=("ID", "Name", "Left", "Top"), show="headings", height=20)
+    tree.place(x=sc(20), y=sc(20), width=sc(760))
     tree.heading("ID", text="Win ID")
     tree.heading("Name", text="Form Name")
     tree.heading("Left", text="Left")
@@ -597,17 +642,17 @@ def create_form_positions_maint_form(parent, conn, cursor):             # Win_ID
     populate_tree()
 
     # Fields
-    tk.Label(form, text="Form Name:", anchor="e", width=15).place(x=int(20 * scaling_factor), y=int(300 * scaling_factor))
-    name_entry = tk.Entry(form, width=40)
-    name_entry.place(x=int(150 * scaling_factor), y=int(300 * scaling_factor))
+    tk.Label(form, text="Form Name:", font=(config.ha_normal), bg=config.master_bg, anchor="e", width=15).place(x=sc(20), y=sc(420))
+    name_entry = tk.Entry(form, width=40, font=(config.ha_normal))
+    name_entry.place(x=sc(150), y=sc(420))
 
-    tk.Label(form, text="Left:", anchor="e", width=15).place(x=int(20 * scaling_factor), y=int(340 * scaling_factor))
-    left_entry = tk.Entry(form, width=10)
-    left_entry.place(x=int(150 * scaling_factor), y=int(340 * scaling_factor))
+    tk.Label(form, text="Left:", font=(config.ha_normal), bg=config.master_bg, anchor="e", width=15).place(x=sc(20), y=sc(460))
+    left_entry = tk.Entry(form, width=10, font=(config.ha_normal))
+    left_entry.place(x=sc(150), y=sc(460))
 
-    tk.Label(form, text="Top:", anchor="e", width=15).place(x=int(20 * scaling_factor), y=int(380 * scaling_factor))
-    top_entry = tk.Entry(form, width=10)
-    top_entry.place(x=int(150 * scaling_factor), y=int(380 * scaling_factor))
+    tk.Label(form, text="Top:", font=(config.ha_normal), bg=config.master_bg, anchor="e", width=15).place(x=sc(20), y=sc(500))
+    top_entry = tk.Entry(form, width=10, font=(config.ha_normal))
+    top_entry.place(x=sc(150), y=sc(500))
 
     def amend_position():
         selection = tree.selection()
@@ -641,10 +686,10 @@ def create_form_positions_maint_form(parent, conn, cursor):             # Win_ID
         tree.selection_remove(tree.selection())
 
     # Buttons
-    tk.Button(form, text="Amend Selected", width=15, command=amend_position).place(x=int(500 * scaling_factor), y=int(340 * scaling_factor))
-    tk.Button(form, text="Save", width=15, command=save_position).place(x=int(650 * scaling_factor), y=int(340 * scaling_factor))
-    tk.Button(form, text="Close", width=15, 
-              command=lambda: close_form_with_position(form, conn, cursor, win_id)).place(x=int(650 * scaling_factor), y=int(500 * scaling_factor))
+    tk.Button(form, text="Amend Selected", font=(config.ha_button), width=15, command=amend_position).place(x=sc(500), y=sc(420))
+    tk.Button(form, text="Save", font=(config.ha_button), width=15, command=save_position).place(x=sc(100), y=sc(550))
+    tk.Button(form, text="Close", font=(config.ha_button), bg=COLORS["exit_but_bg"], width=15, 
+            command=lambda: close_form_with_position(form, conn, cursor, win_id)).place(x=sc(600), y=sc(550))
 
     form.wait_window()
 

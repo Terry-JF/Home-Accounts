@@ -5,6 +5,7 @@ import logging
 import tkinter as tk
 from tkcalendar import Calendar
 import os
+import time
 from db import (get_window_position, save_window_position)
 from config import COLORS
 import config
@@ -169,7 +170,6 @@ def open_form_with_position(form, conn, cursor, win_id, default_title):
     else:
         form.geometry("+200+200")  # Default to primary monitor
     form.transient(form.master)
-    # form.attributes("-topmost", True)
     # Save initial position if not in DB
     if name is None:
         save_window_position(cursor, conn, win_id, default_title, form.winfo_x(), form.winfo_y())
@@ -278,8 +278,108 @@ class Scaler:
 set_sc = Scaler.set_scaling_factor
 sc = Scaler.scale
 
+class Tooltip:
+    def __init__(self, widget, text, delay=500):
+        """Initialize tooltip for a widget.
+        
+        Args:
+            widget: The Tkinter widget to bind the tooltip to.
+            text: The tooltip text to display.
+            delay: Delay in milliseconds before showing the tooltip (0 for immediate).
+        """
+        self.widget = widget
+        self.text = text
+        self.delay = delay
+        self.tooltip = None
+        self.after_id = None
+        self.last_enter_time = 0
 
-    
+        # Bind events
+        self.widget.bind("<Enter>", self.schedule_tooltip)
+        self.widget.bind("<Leave>", self.hide_tooltip)
+        self.widget.bind("<ButtonPress>", self.hide_tooltip)
+
+    def schedule_tooltip(self, event):
+        """Schedule the tooltip to show after a delay, with debouncing."""
+        # Ignore events if widget is disabled
+        if self.widget.cget("state") == "disabled":
+            return
+
+        # Store mouse coordinates for positioning
+        self.mouse_x = event.x_root
+        self.mouse_y = event.y_root
+
+        current_time = time.time()
+        if current_time - self.last_enter_time < (self.delay / 1000):
+            return  # Debounce rapid <Enter> events
+        self.last_enter_time = current_time
+
+        # Cancel any existing scheduled tooltip
+        if self.after_id is not None:
+            self.widget.after_cancel(self.after_id)
+            self.after_id = None
+
+        # Schedule or show immediately
+        if self.delay > 0:
+            self.after_id = self.widget.after(self.delay, self.show_tooltip)
+        else:
+            self.show_tooltip()
+
+    def show_tooltip(self):
+        """Display the tooltip window relative to the mouse pointer."""
+        if self.tooltip is not None:
+            self.tooltip.destroy()
+        form = self.widget.winfo_toplevel()  # Get the parent form (root or Toplevel)
+        form_width = form.winfo_width()
+        
+        # Create temporary label to measure tooltip width
+        temp_label = tk.Label(form, text=self.text, bg=COLORS["home_bg"], fg=COLORS["home_bg"])
+        temp_label.update_idletasks()  # Ensure geometry is calculated
+        tooltip_width = temp_label.winfo_reqwidth() + sc(10)  # Add padding
+        temp_label.destroy()
+
+        # Position tooltip relative to mouse pointer and Determine if button is in rightmost 50% of form
+        right_threshold = form.winfo_rootx() + 0.5 * form_width
+        if self.mouse_x > right_threshold:
+            # Place tooltip to the left
+            x = self.mouse_x - tooltip_width - sc(10)
+        else:
+            # Place tooltip to the right
+            x = self.mouse_x + sc(10)
+        if self.mouse_y > 20:
+            y = self.mouse_y - sc(20)
+        else:
+            y = 0
+        
+        # Create tooltip
+        self.tooltip = tk.Toplevel(self.widget)
+        self.tooltip.wm_overrideredirect(True)
+        self.tooltip.attributes("-topmost", True)  # Keep on top
+        self.tooltip.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(
+            self.tooltip,
+            text=self.text,
+            font=("Arial", 10),
+            bg=COLORS["white"],
+            fg=COLORS["black"],
+            borderwidth=1,
+            relief="solid"
+        )
+        label.pack()
+        #logger.debug(f"Showing tooltip for {self.widget}: text={self.text}, x={x}, y={y}, mouse_x={self.mouse_x}, mouse_y={self.mouse_y}")
+
+    def hide_tooltip(self, event=None):
+        """Hide and destroy the tooltip."""
+        if self.after_id is not None:
+            self.widget.after_cancel(self.after_id)
+            self.after_id = None
+        if self.tooltip is not None:
+            self.tooltip.destroy()
+            self.tooltip = None
+        self.last_enter_time = 0
+        #logger.debug(f"Hiding tooltip for {self.widget}")
+
+
     
     
     
