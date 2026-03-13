@@ -5,10 +5,11 @@ import json
 import logging
 import re
 import os
+import glob
 import sqlite3
 import traceback
 from datetime import datetime, timedelta
-from config import CONFIG, get_config
+from config import get_config
 
 # Get logger
 logger = logging.getLogger('HA.rules_engine')
@@ -19,11 +20,11 @@ def process_transactions(json_path, conn, acc_id):
     """
     logger.debug(f"Processing transactions from {json_path} for account {acc_id}")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = os.path.join(get_config('LOG_DIR'), f"{timestamp}_acc{acc_id}_import_rules.log")
+    log_file = os.path.join(get_config('ILOG_PATH'), f"{timestamp}_acc{acc_id}_import_rules.log")
     logger.info(f"Switching log output to {log_file}")
     
     # Ensure log directory exists
-    log_dir = get_config('LOG_DIR')
+    log_dir = get_config('ILOG_PATH')
     os.makedirs(log_dir, exist_ok=True)
 
     # Save current handlers and create new FileHandler
@@ -64,6 +65,8 @@ def process_transactions(json_path, conn, acc_id):
             transaction_id = trans.get("transactionId", "")
             if transaction_id == "":
                 transaction_id = trans.get("internalTransactionId", "")
+            if transaction_id == "":    #some pending transactions have no ID - so create one
+                transaction_id = f"{date}-{trans["transactionAmount"]["amount"]}-{trans.get("remittanceInformationUnstructured", "")}" 
             hai_uid = f"{acc_id}-{transaction_id}"
             logger.debug(f"++++++++++++ Processing transaction {hai_uid}")
             
@@ -79,6 +82,9 @@ def process_transactions(json_path, conn, acc_id):
                 continue
             hai_year, hai_month, hai_day = map(int, date_parts)
             hai_desc = trans.get("remittanceInformationUnstructured", "")
+            if hai_desc == "":
+                hai_desc = trans.get("creditorName", "unknown")
+            
             hai_acc_from = acc_id if amount < 0 else 0
             hai_acc_to = acc_id if amount > 0 else 0
             
@@ -144,7 +150,7 @@ def process_transactions(json_path, conn, acc_id):
                     raise            
             logger.debug(f"Applying rules: ID={hai_id}, Type={hai_type}, Date={hai_day}/{hai_month}/{hai_year}, Stat={hai_stat}, £={hai_amount}, Desc={hai_desc}, From={hai_acc_from}, To={hai_acc_to}, Bank={acc_id}")
             
-            # Apply rules to set HAI_Type, HAI_Desc, etc.
+############# Apply rules to set HAI_Type, HAI_Desc, etc. before we look for a match
             deleted = apply_rules(conn, hai_id, acc_id)
             logger.debug(f"deleted={deleted}")
             if deleted is True:
@@ -162,19 +168,19 @@ def process_transactions(json_path, conn, acc_id):
                 continue
             hai_type, hai_day, hai_month, hai_year, hai_amount, hai_acc_from, hai_acc_to, hai_stat, hai_desc, hai_exp, hai_expsub = result
             
-            # Matching logic
-            match_tr_id = match_transaction(cur, hai_type, hai_day, hai_month, hai_year, hai_amount, hai_acc_from, hai_acc_to, hai_stat)
+############# Matching logic - match imported transaction to an existing one, if we can, else create a new transaction
+            match_tr_id = match_transaction(cur, hai_type, hai_day, hai_month, hai_year, hai_amount, hai_acc_from, hai_acc_to, hai_stat, hai_desc)
             
             if match_tr_id:
-                # Update existing Trans record
-                dow = datetime(hai_year, hai_month, hai_day).weekday() + 1
-                if hai_exp == 0 or hai_exp == None:
-                    hai_exp = 99
-                cur.execute("""
-                    UPDATE Trans SET Tr_DOW = ?, Tr_Day = ?, Tr_Month = ?, Tr_Year = ?, Tr_Stat = ?, Tr_Amount = ?,
-                        Tr_FF_Journal_ID = ?, Tr_Desc = ?, Tr_Acc_From = ?, Tr_Acc_To = ?, Tr_Exp_ID = ?, Tr_ExpSub_ID = ?
-                    WHERE Tr_ID = ?
-                """, (dow, hai_day, hai_month, hai_year, hai_stat, hai_amount, hai_id, hai_desc, hai_acc_from, hai_acc_to, hai_exp, hai_expsub, match_tr_id))
+                # Update existing Trans record - DO NOT change date or Exp categories which were set by prev forecast/pending trans
+                if hai_stat == 3:   # if Complete then clear any action flags
+                    cur.execute("""
+                        UPDATE Trans SET Tr_Stat = ?, Tr_Amount = ?, Tr_FF_Journal_ID = ?, Tr_Desc = ?, Tr_Acc_From = ?, Tr_Acc_To = ?, Tr_Query_Flag = 0 WHERE Tr_ID = ?
+                    """, (hai_stat, hai_amount, hai_id, hai_desc, hai_acc_from, hai_acc_to,  match_tr_id))
+                else:
+                    cur.execute("""
+                        UPDATE Trans SET Tr_Stat = ?, Tr_Amount = ?, Tr_FF_Journal_ID = ?, Tr_Desc = ?, Tr_Acc_From = ?, Tr_Acc_To = ? WHERE Tr_ID = ?
+                    """, (hai_stat, hai_amount, hai_id, hai_desc, hai_acc_from, hai_acc_to, match_tr_id))
                 cur.execute("UPDATE HA_Import SET HAI_Disp = 'updated', HAI_Tr_ID = ? WHERE HAI_ID = ?", (match_tr_id, hai_id))
                 logger.debug(f"Updated Trans record: Tr_ID={match_tr_id}, HAI_ID={hai_id}")
                 
@@ -182,9 +188,9 @@ def process_transactions(json_path, conn, acc_id):
                 try:
                     cur.execute("SELECT Rule_Desc FROM Trans_Rules WHERE HAI_ID = ?", (hai_id,))
                     curr_desc = cur.fetchone()[0] 
-                    logger.debug(f"Fetched Rule_Desc={curr_desc}")
-                    rule_desc = curr_desc + f"\nMatched to existing transaction, Tr_ID={match_tr_id}" 
-                    logger.debug(f"updated rule_desc={rule_desc}")
+                    #logger.debug(f"Fetched Rule_Desc={curr_desc}")
+                    rule_desc = curr_desc + f"\nMatched to existing transaction, Tr_ID={match_tr_id}, date={hai_day}/{hai_month}/{hai_year}" 
+                    #logger.debug(f"updated rule_desc={rule_desc}")
                     cur.execute("UPDATE Trans_Rules SET Rule_Desc = ?, Tr_ID = ? WHERE HAI_ID = ?", (rule_desc, match_tr_id, hai_id))
                     logger.debug(f"Updated Trans_Rules: HAI_ID={hai_id}, Tr_ID={match_tr_id}, Rule_Desc={rule_desc}")
                 except sqlite3.Error as e:
@@ -229,23 +235,23 @@ def process_transactions(json_path, conn, acc_id):
         logger.handlers = original_handlers
         logger.debug(f"Restored original logger handlers: {[h.__class__.__name__ for h in original_handlers]}")    
 
-def match_transaction(cur, hai_type, hai_day, hai_month, hai_year, hai_amount, hai_acc_from, hai_acc_to, hai_stat):
+def match_transaction(cur, hai_type, hai_day, hai_month, hai_year, hai_amount, hai_acc_from, hai_acc_to, hai_stat, hai_desc):
     """
     Match a transaction against Trans table using 31 steps.
     Returns Tr_ID if matched, None if no match.
     """
-    logger.debug(f"Matching transaction: Type={hai_type}, Date={hai_year}-{hai_month}-{hai_day}, Amount={hai_amount}")
+    logger.debug(f"Matching transaction: Type={hai_type}, Date={hai_day}-{hai_month}-{hai_year}, Amount={hai_amount}, From={hai_acc_from}, To={hai_acc_to}")
     
     # Step 1: Exact match
     query = """
         SELECT Tr_ID FROM Trans
         WHERE Tr_Day = ? AND Tr_Month = ? AND Tr_Year = ? 
-        AND Tr_Amount = ? AND Tr_Type = ? 
+        AND Tr_Amount = ? AND Tr_Type = ? AND Tr_Stat < 3 
     """
-    if hai_stat == 2:   # Pending - just look for Forecast transactions
-        query = query + " AND Tr_Stat = 1 "
-    else:               # Booked - look for Forecast and Pending
-        query = query + " AND Tr_Stat < 3 "
+    #if hai_stat == 2:   # Pending - just look for Forecast transactions
+    #    query = query + " AND Tr_Stat = 1 "
+    #else:               # Booked - look for Forecast and Pending
+    #    query = query + " AND Tr_Stat < 3 "
     if hai_type == 1:   # Income
         query = query + " AND Tr_Acc_to = ? "
         hai_acc = hai_acc_to
@@ -338,31 +344,33 @@ def match_transaction(cur, hai_type, hai_day, hai_month, hai_year, hai_amount, h
         logger.debug(f"Step {i}: No match")
         #logger.debug(f"Step {i}: No match - {query} \n check_day={check_day}, check_month={check_month}, check_year={check_year}, hai_amount={hai_amount}, hai_type={hai_type}, hai_acc_from{hai_acc_from}, hai_acc_to={hai_acc_to}, hai_acc={hai_acc}")
             
-    # Steps 22–28: Expense description matching (up to 7 days back)
-    if hai_type == 2:  # Expense
+    # Steps 22–28: Looking for existing Pending plus Expense, with description containing user defined pattern (up to 7 days back)
+    if hai_type == 2 and hai_stat == 3:  # Expense and Booked
         cur.execute("SELECT Pattern FROM Match_Rules WHERE MRule_Type = 'description'")
         patterns = [row[0] for row in cur.fetchall()]
         for i in range(1, 8):
             check_date = datetime(hai_year, hai_month, hai_day) - timedelta(days=i)
             check_day, check_month, check_year = check_date.day, check_date.month, check_date.year
             for pattern in patterns:
-                cur.execute("""
-                    SELECT Tr_ID FROM Trans
-                    WHERE Tr_Day = ? AND Tr_Month = ? AND Tr_Year = ? 
-                    AND Tr_Type = 2 AND Tr_Stat = 2
-                    AND Tr_Acc_From = ? AND Tr_Desc LIKE ?
-                """, (check_day, check_month, check_year, hai_acc_from, f"%{pattern}%"))
-                result = cur.fetchall()
-                if len(result) == 1:
-                    logger.debug(f"Match found at Pattern match Description -{i+21} - Date={check_day}-{check_month}-{check_year}, From={hai_acc_from}, Pattern={pattern}, Tr_id={result[0][0]}")
-                    return result[0][0]
-                if len(result) > 1:
-                    logger.debug(f"Multiple matches found at Pattern match Description -{i+21}, Pattern={pattern}")
-                    #logger.debug(f"Multiple matches found at Step {i+21} - Date={hai_day}-{hai_month}-{hai_year}, £={hai_amount}, Type={hai_type}, From={hai_acc_from}, To={hai_acc_to}")
-                    #for row in result:
-                        #logger.debug(f"  Matching Tr_ID: {row[0]}")
-                    return None
-                logger.debug(f"Step {i+21}: No match with pattern {pattern}")
+                # If pattern exists in Booked transaction, then look for a matching Pending transaction
+                if pattern in hai_desc:
+                    cur.execute("""
+                        SELECT Tr_ID FROM Trans
+                        WHERE Tr_Day = ? AND Tr_Month = ? AND Tr_Year = ? 
+                        AND Tr_Type = 2 AND Tr_Stat = 2
+                        AND Tr_Acc_From = ? AND Tr_Desc LIKE ?
+                    """, (check_day, check_month, check_year, hai_acc_from, f"%{pattern}%"))
+                    result = cur.fetchall()
+                    if len(result) == 1:
+                        logger.debug(f"Match found at Pattern match Description -{i+21} - Date={check_day}-{check_month}-{check_year}, From={hai_acc_from}, Pattern={pattern}, Tr_id={result[0][0]}")
+                        return result[0][0]
+                    if len(result) > 1:
+                        logger.debug(f"Multiple matches found at Pattern match Description -{i+21}, Pattern={pattern}")
+                        #logger.debug(f"Multiple matches found at Step {i+21} - Date={hai_day}-{hai_month}-{hai_year}, £={hai_amount}, Type={hai_type}, From={hai_acc_from}, To={hai_acc_to}")
+                        #for row in result:
+                            #logger.debug(f"  Matching Tr_ID: {row[0]}")
+                        return None
+                    logger.debug(f"Step {i+21}: No match with pattern {pattern}")
     
     # Step 29: Forecast with zero amount
     query = """
@@ -454,18 +462,18 @@ def apply_rules(conn, hai_id, acc_id):
         
         # Fetch rule groups
         cur.execute("""
-            SELECT Group_ID, Group_Sequence
+            SELECT Group_ID, Group_Name, Group_Sequence
             FROM RuleGroups
             WHERE Group_Enabled = 1
             ORDER BY Group_Sequence
         """)
         groups = cur.fetchall()
         
-        for group_id, group_sequence in groups:
-            logger.debug(f"  >>>>  Processing Rule Group {group_id} (Group Sequence {group_sequence})")
+        for group_id, group_name, group_sequence in groups:
+            logger.debug(f"  >>>>  Processing Rule Group {group_id} - {group_name} - (Group Sequence {group_sequence})")
             # Fetch rules in group
             cur.execute("""
-                SELECT Rule_ID, Rule_Sequence, Rule_Enabled, Rule_Active, 
+                SELECT Rule_ID, Rule_Name, Rule_Sequence, Rule_Enabled, Rule_Active, 
                     Rule_Trigger_Mode, Rule_Proceed
                 FROM Rules
                 WHERE Group_ID = ? AND Rule_Active = 1 AND Rule_Enabled = 1
@@ -474,10 +482,10 @@ def apply_rules(conn, hai_id, acc_id):
             rules = cur.fetchall()
             
             group_proceed = True
-            for rule_id, rule_sequence, rule_enabled, rule_active, trigger_mode, rule_proceed in rules:
+            for rule_id, rule_name, rule_sequence, rule_enabled, rule_active, trigger_mode, rule_proceed in rules:
                 if not group_proceed:
                     break
-                logger.debug(f"  Processing Rule {rule_id} (Rule Sequence {rule_sequence})")
+                logger.debug(f"  Processing Rule {rule_id} - {rule_name} - (Rule Sequence {rule_sequence})")
                 
                 # Fetch triggers
                 cur.execute("""
@@ -694,15 +702,15 @@ def apply_rules(conn, hai_id, acc_id):
                         cur.execute("SELECT Rule_Name FROM Rules WHERE Rule_ID = ?", (rule_id,))
                         rule_name = cur.fetchone()[0] 
                         rule_desc = "Rule Name >> " + rule_name + ": " + rule_desc
-                        logger.debug(f"rule_desc={rule_desc}")
+                        #logger.debug(f"rule_desc=\n{rule_desc}")
                     
                         # UPDATE as Trans_Rules record should already exist. Append new data to end of existing to keep history
                         try:
                             cur.execute("SELECT Rule_Desc FROM Trans_Rules WHERE HAI_ID = ?", (hai_id,))
                             curr_desc = cur.fetchone()[0] 
-                            logger.debug(f"Fetched curr_desc = {curr_desc}")
+                            #logger.debug(f"Fetched curr_desc = {curr_desc}")
                             rule_desc = curr_desc + "\n" + rule_desc
-                            logger.debug(f"Fetched Rule_Desc, added actions = {rule_desc}")
+                            #logger.debug(f"Fetched Rule_Desc, added actions = {rule_desc}")
                             cur.execute("UPDATE Trans_Rules SET Rule_Desc = ? WHERE HAI_ID = ?", (rule_desc, hai_id))
                             logger.debug(f"Updated Trans_Rules: HAI_ID={hai_id}, Rule_Desc={rule_desc}")
                         except sqlite3.Error as e:
@@ -725,17 +733,20 @@ def apply_rules(conn, hai_id, acc_id):
 
 def cleanup_ha_import(conn):
     """
-    Delete HA_Import and Rule_Tags records older than specified days.
+    Delete HA_Import, Rule_Tags records, and .json files older than specified days.
     """
-    days = CONFIG['IMPORT_DAYS_TO_KEEP']
-    logger.debug(f"Cleaning up HA_Import and Rule_Tags records older than {days} days")
+    days = get_config('IMPORT_DAYS_TO_KEEP')
+    logger.debug(f"Cleaning up HA_Import, Rule_Tags records, and .json files older than {days} days")
     try:
         cur = conn.cursor()
         cutoff_date = datetime.now() - timedelta(days=days)
         cutoff_timestamp = int(cutoff_date.timestamp())
         
+        # Delete old Rule_Tags records
         cur.execute("DELETE FROM Rule_Tags WHERE Created_At < ?", (cutoff_timestamp,))
         deleted_tags = cur.rowcount
+        
+        # Delete old HA_Import records
         cur.execute("""
             DELETE FROM HA_Import
             WHERE HAI_Year * 10000 + HAI_Month * 100 + HAI_Day < ?
@@ -743,8 +754,28 @@ def cleanup_ha_import(conn):
         deleted_imports = cur.rowcount
         conn.commit()
         logger.info(f"Deleted {deleted_tags} Rule_Tags and {deleted_imports} HA_Import records older than {days} days")
+        
+        # Delete old .json files in BANK_DIR
+        bank_dir = get_config('BANK_DIR')
+        deleted_files = 0
+        failed_files = 0
+        for file_path in glob.glob(os.path.join(bank_dir, "*.json")):
+            try:
+                file_mtime = os.path.getmtime(file_path)
+                if file_mtime < cutoff_timestamp:
+                    os.remove(file_path)
+                    deleted_files += 1
+                    logger.debug(f"Deleted file: {file_path}")
+            except (OSError, PermissionError) as e:
+                failed_files += 1
+                logger.error(f"Failed to delete file {file_path}: {e}")
+        logger.info(f"Deleted {deleted_files} .json files from {bank_dir}, {failed_files} failures")
+        
     except sqlite3.Error as e:
         logger.error(f"Error cleaning up HA_Import/Rule_Tags: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Error cleaning up .json files: {e}")
         raise
 
 def test_rules(json_path, conn, acc_id):

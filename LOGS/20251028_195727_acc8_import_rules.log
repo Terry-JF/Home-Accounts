@@ -1,0 +1,4 @@
+2025-10-28 19:57:27,808 - DEBUG - Configured logger with new FileHandler for LOGS/20251028_195727_acc8_import_rules.log
+2025-10-28 19:57:27,808 - DEBUG - Sorted 1 transactions by date
+2025-10-28 19:57:27,808 - DEBUG - ++++++++++++ Processing transaction 8-2025-10-27--784.00-
+2025-10-28 19:57:27,809 - WARNING - Duplicate transaction skipped: 8-2025-10-27--784.00-

@@ -1,0 +1,32 @@
+Home Accounts (HA) Database Migration Program
+Will enable a user to migrate database records from older AutoIt3 based HA system to new Python based HA system. Both systems use a SQLite database with some common tables, as described in our previous chat. I use VScode in a Windows 11 PC so this is the target environment.
+Needs a home UI to allow user to setup data. This has two file picker controls for user to select the source and target database files on local PC. DB files need to exist or else provide a ‘New Target DB’ button that will create a new empty target DB. Also needs  ‘Start Year’ plus ‘End Year’ controls so user can choose any consecutive period of years to migrate. The program should find the earliest and latest transaction record in the source data and use these to validate the entered years, period cannot extend beyond the valid data.
+Will need a ‘Start Migration’ button and an ‘Close/Exit’ button, plus a progress indicator.
+There are 8 tables that exist in both the source and target DBs and have the same structure:
+Account, Budget, IE_Cata, Lookups, Lup_Type, Regular, Trans, Windows.
+These 8 tables contain the data to be migrated. There are also 14 other tables in the target DB and any existing data in these tables should be preserved, unchanged. The 6 other tables in the source DB contain data related to the historic data import mechanism used by the older system and are no longer relevant. I don’t think this data will have any value in the new system, unless I discover something during testing. Ignore these 6 tables for now.
+Account table:
+Primary Key is Acc_ID + Acc_Year. It should always hold 14 records per year where Acc_ID = 1 through 14 and Acc_Year is the relevant year held as in integer. For each year in the ‘Start Year’ through ‘End Year’ range, any existing records in the target DB should be deleted and replaced with a copy of the source records. The fields Acc_Open and Acc_Jan through Acc_Dec should contain a number accurate to 2 decimal places (UK £ currency), any digits beyond this in the source data can be rounded to 2 places.
+The Trans records use Acc_ID as a foreign key so it is important to maintain these values.
+Budget table:
+Primary key is Bud_ID so all records have a unique key using this field, though I don’t think this is ever used. All records are also year specific using the Bud_Year field. There are 380 records per year, with Bud_PID = 1 through 19 and Bud_CID = 0 through 19. As each record relates to an entire year, for each year in the ‘Start Year’ through ‘End Year’ range, all existing records in the target DB (if any) should be deleted and replaced with a copy of the source records. Perhaps a unique key for this table should be Bud_Year + Bud_PID + Bud_CID and Bud_ID should be dropped?
+IE_Cata table:
+All records relate to a particular year using the IE_Year field. For each year in the ‘Start Year’ through ‘End Year’ range, all existing records in the target DB should be deleted and replaced with a copy of the source records.
+Lookups table:
+This table holds values that are used by multiple different parts of the program and so these will need to treated differently.
+Where Lup_LupT_ID = 1 these records hold the years considered as valid by the program. The records should hold consecutive numbers (e.g. 2024, 2025, 2026, etc.) in the Lup_Desc field and there needs to exist records for the data years being migrated. If there is no record for any year within the data being migrated then add the necessary records (above or below the existing range of years) and ensure that the Lup_Seq field holds values will sort the records into the correct numerically ascending order.
+Where Lup_LupT_ID = 2 through 8 - Do not migrate these records, the user can amend these settings from within the program where required.
+Lup_Type table:
+This table should exist and should not need to be changed as it only has static data, so ignore it.
+Regular table:
+This table holds templates for creating and updating repeating regular transactions in the Trans table. All records relate to a particular year using the Reg_Year field. For each year in the ‘Start Year’ through ‘End Year’ range, all existing records in the target DB should be deleted and replaced with a copy of the source records.
+Any Trans table records that were originally created by the program based on a Regular record will have the Reg_ID value held in the Tr_Reg_ID field else this field will be zero. It is important to keep this relationship in the migrated data.
+Trans table:
+This table holds the actual transaction data. During data migration, any existing Trans records for the year(s) covered by the year-range should be deleted prior to inserting the new transaction data.
+Tr_Reg_ID points to the Reg_ID field of the Regular Table.
+Tr_Year has the same meaning as the Acc_Year, Bud_Year, IE_Year and Reg_Year fields.
+Tr_Exp_ID maps to IE_PID and Tr_ExpSub_ID maps to IE_CID in the IE_Cata table.
+Tr_Acc_From and Tr_Acc_To map to Acc_ID in the Account table.
+Values in the Tr_FF_Journal_ID field are obsolete as they map to the older import mechanism data which is no longer used or migrated. Set this field to null. 
+Windows table:
+This table holds records that remember where each ‘form’ within the program was last placed. The field Win_ID value is hard coded and identifies the form and so differs between the AutoIt3 and Python versions. Do not migrate this data.

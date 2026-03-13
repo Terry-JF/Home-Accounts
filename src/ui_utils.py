@@ -13,29 +13,32 @@ import config
 # Set up logging
 logger = logging.getLogger('HA.ui_utils')
 
-def refresh_grid(tree, rows, marked_rows=None, focus_idx=None, focus_day=None):
+def refresh_grid(tree, rows, is_current_month, marked_rows=None, focus_idx=None, focus_day=None, focus_tr_id=None):
+    from datetime import datetime
+    current = datetime.now()
+    today_day = current.day if is_current_month else None
+    
+    #logger.debug(f"refresh_grid() called - rows[2] = {rows[2]}")
+
     if marked_rows is None:
         marked_rows = set()
-    trans_rows = [r for r in rows if r["status"] != "Total"]
-    trans_rows.sort(key=lambda x: int(x["values"][1]) if x["values"][1].isdigit() else 0)
-    sorted_rows = []
-    trans_idx = 0
-    for row in rows:
-        if row["status"] == "Total":
-            sorted_rows.append(row)
-        else:
-            if trans_idx < len(trans_rows):
-                sorted_rows.append(trans_rows[trans_idx])
-                trans_idx += 1
+
     tree.delete(*tree.get_children())
 
     root = tree.master.master
 
-    for i, row_data in enumerate(sorted_rows):
+    for i, row_data in enumerate(rows):
         values = list(row_data["values"])  # Convert tuple to list for modification
         tags = []
-        if row_data["status"] == "Total":
-            tags.append("daily_total")
+        if row_data["status"] == "TodayMarker":
+            tags.append("today_marker")
+            tree.insert("", "end", iid=str(i), values=values, tags=tags)
+        elif row_data["status"] == "Total":
+            day_num = int(values[1]) if values[1].isdigit() else 0
+            if is_current_month and day_num == today_day:
+                tags.append("today_total")
+            else:
+                tags.append("daily_total")
             overdrawn = False
             if hasattr(root, 'credit_limits'):
                 for col_idx in range(6, min(17, 6 + len(root.accounts))):  # Cols 6-17
@@ -49,10 +52,11 @@ def refresh_grid(tree, rows, marked_rows=None, focus_idx=None, focus_day=None):
                     except ValueError:
                         pass
             if overdrawn:
-                tags.append("overdrawn")
+                tags.append("overlimit")
             tree.insert("", "end", iid=str(i), values=values, tags=tags)
         else:
             day = values[0].lower()
+            day_num = int(values[1]) if values[1].isdigit() else 0
             is_weekend = day in ["sat", "sun"]
             flag = row_data["flag"]
             status = row_data["status"]
@@ -77,28 +81,31 @@ def refresh_grid(tree, rows, marked_rows=None, focus_idx=None, focus_day=None):
                 tags.append("complete")
 
             tree.insert("", "end", iid=str(i), values=values, tags=tags)
-
+    #logger.debug(f"refresh_grid scroll_row = {config.scroll_row}")
     if focus_day:
         focus_day_int = int(focus_day)
         closest_idx = None
-        #closest_day = None
-        for i, row in enumerate(sorted_rows):
-            if row["status"] != "Total":
-                row_day = int(row["values"][1])
+        for i, row in enumerate(rows):
+            if row["status"] != "Total" and row["status"] != "TodayMarker":
+                row_day = int(row["values"][1]) if row["values"][1].isdigit() else 0
                 if row_day >= focus_day_int:
-                    scroll_offset = max(0, i - 11)
+                    scroll_offset = max(0, i - config.scroll_row)
                     tree.yview_moveto(scroll_offset / len(rows))
                     break
                 closest_idx = i
-                #closest_day = row_day
         else:
             if closest_idx is not None:
-                scroll_offset = max(0, closest_idx - 11)
+                scroll_offset = max(0, closest_idx - config.scroll_row)
                 tree.yview_moveto(scroll_offset / len(rows))
-    elif focus_idx is not None and 0 <= focus_idx < len(sorted_rows):
-        scroll_offset = max(0, focus_idx - 11)
+    elif focus_idx is not None and 0 <= focus_idx < len(rows):
+        scroll_offset = max(0, focus_idx - config.scroll_row + 1)
         tree.yview_moveto(scroll_offset / len(rows))
-
+    elif focus_tr_id is not None:
+        for i, row in enumerate(rows):
+            if row.get("tr_id") == focus_tr_id:
+                scroll_offset = max(0, i - config.scroll_row + 1)
+                tree.yview_moveto(scroll_offset / len(rows))
+            
 class VerticalScrolledFrame(tk.Frame):
     def __init__(self, parent, *args, **kw):
         tk.Frame.__init__(self, parent, *args, **kw)
@@ -162,9 +169,9 @@ def resource_path(relative_path):
         raise
 
 # Window Management functions
-def open_form_with_position(form, conn, cursor, win_id, default_title):
+def open_form_with_position(form, conn, cursor, win_id, title):
     name, left, top = get_window_position(cursor, win_id)           # get details from DB table
-    form.title(name if name else default_title)
+    form.title(title if title else name)
     if left is not None and top is not None:
         form.geometry(f"+{left}+{top}")
     else:
@@ -172,7 +179,7 @@ def open_form_with_position(form, conn, cursor, win_id, default_title):
     form.transient(form.master)
     # Save initial position if not in DB
     if name is None:
-        save_window_position(cursor, conn, win_id, default_title, form.winfo_x(), form.winfo_y())
+        save_window_position(cursor, conn, win_id, title, form.winfo_x(), form.winfo_y())
 
 def close_form_with_position(form, conn, cursor, win_id):
     left = form.winfo_x()
@@ -266,7 +273,7 @@ class Scaler:
     @classmethod
     def set_scaling_factor(cls, root):
         cls._scaling_factor = root.winfo_fpixels('1i') / 96
-        logger.debug(f"Set scaling_factor to {cls._scaling_factor}")
+        #logger.debug(f"Set scaling_factor to {cls._scaling_factor}")
 
     @classmethod
     def scale(cls, pixels):

@@ -1,0 +1,153 @@
+CREATE TABLE "Account" (
+	"Acc_ID"	INTEGER,
+	"Acc_Year"	INTEGER,
+	"Acc_Type"	INTEGER,
+	"Acc_Name"	TEXT,
+	"Acc_Short_Name"	TEXT,
+	"Acc_Last4"	TEXT,
+	"Acc_Credit_Limit"	REAL,
+	"Acc_Colour"	INTEGER,
+	"Acc_Open"	REAL,
+	"Acc_Jan"	REAL,
+	"Acc_Feb"	REAL,
+	"Acc_Mar"	REAL,
+	"Acc_Apr"	REAL,
+	"Acc_May"	REAL,
+	"Acc_Jun"	REAL,
+	"Acc_Jul"	REAL,
+	"Acc_Aug"	REAL,
+	"Acc_Sep"	REAL,
+	"Acc_Oct"	REAL,
+	"Acc_Nov"	REAL,
+	"Acc_Dec"	REAL,
+	"Acc_Statement_Date"	INTEGER,
+	"Acc_Prev_Month"	INTEGER,
+	PRIMARY KEY("Acc_ID","Acc_Year")
+)
+CREATE TABLE "Account_2" (
+Acc2_ID INTEGER, 
+Acc2_Year INTEGER, 
+Acc2_Open REAL, 
+Acc2_Name1 TEXT, 
+Acc2_Amt1 REAL, 
+Acc2_Name2 TEXT, 
+Acc2_Amt2 REAL, 
+Acc2_Name3 TEXT, 
+Acc2_Amt3 REAL,
+Acc2_Name4 TEXT, 
+Acc2_Amt4 REAL, 
+Acc2_Name5 TEXT, 
+Acc2_Amt5 REAL, 
+Acc2_Name6 TEXT, 
+Acc2_Amt6 REAL
+)
+CREATE TABLE "Budget" (
+	"Bud_ID"	INTEGER NOT NULL UNIQUE,
+	"Bud_Year"	INTEGER,
+	"Bud_PID"	INTEGER,
+	"Bud_CID"	INTEGER,
+	"Bud_M1"	REAL,
+	"Bud_M2"	REAL,
+	"Bud_M3"	REAL,
+	"Bud_M4"	REAL,
+	"Bud_M5"	REAL,
+	"Bud_M6"	REAL,
+	"Bud_M7"	REAL,
+	"Bud_M8"	REAL,
+	"Bud_M9"	REAL,
+	"Bud_M10"	REAL,
+	"Bud_M11"	REAL,
+	"Bud_M12"	REAL,
+	PRIMARY KEY("Bud_ID" AUTOINCREMENT)
+)
+CREATE TABLE "FF_Admin" (
+	"FF_Key_Expires"	INTEGER,
+	"FF_Access_Token"	TEXT
+, "FF_Refresh_Token"	TEXT
+)
+CREATE TABLE "FF_Pend_Deleted" (
+	"FF_Journal_ID"	INTEGER UNIQUE,
+	"FF_Date_Deleted"	INTEGER
+)
+CREATE TABLE "IE_Cata" (
+	"IE_PID"	INTEGER,
+	"IE_CID"	INTEGER,
+	"IE_Year"	INTEGER,
+	"IE_Desc"	TEXT,
+	"IE_Cat_ID"	INTEGER,
+	"IE_Seq"	INTEGER
+)
+CREATE TABLE "Imp_Acc_Map" (
+	"Imp_HA_Acc_ID"	INTEGER UNIQUE,
+	"Imp_HA_Acc_Name"	TEXT,
+	"Imp_FF_Acc_ID"	INTEGER UNIQUE,
+	"Imp_FF_Acc_Name"	TEXT
+)
+CREATE TABLE "Imp_Cat_Map" (
+	"Imp_FF_Desc"	TEXT,
+	"Imp_FF_Exp_Name"	TEXT,
+	"Imp_FF_Cat_Name"	TEXT,
+	"Imp_FF_Cat_ID"	INTEGER UNIQUE,
+	"Imp_HA_PID"	INTEGER,
+	"Imp_HA_CID"	INTEGER
+)
+CREATE TABLE "Lookups" (
+	"Lup_ID"	INTEGER,
+	"Lup_LupT_ID"	INTEGER,
+	"Lup_Desc"	TEXT,
+	"Lup_Seq"	INTEGER,
+	PRIMARY KEY("Lup_ID" AUTOINCREMENT)
+)
+CREATE TABLE "Lup_Type" (
+	"LupT_ID"	INTEGER,
+	"LupT_Desc"	TEXT,
+	"LupT_Max_Recs"	INTEGER,
+	PRIMARY KEY("LupT_ID" AUTOINCREMENT)
+)
+CREATE TABLE "Regular" (
+	"Reg_ID"	INTEGER,
+	"Reg_Year"	INTEGER,
+	"Reg_Frequency"	INTEGER,
+	"Reg_Day"	INTEGER,
+	"Reg_Month"	INTEGER,
+	"Reg_Type"	INTEGER,
+	"Reg_Amount"	REAL,
+	"Reg_Desc"	TEXT,
+	"Reg_Start"	INTEGER,
+	"Reg_Stop"	INTEGER,
+	"Reg_Exp_ID"	INTEGER,
+	"Reg_ExpSub_ID"	INTEGER,
+	"Reg_Acc_From"	INTEGER,
+	"Reg_Acc_To"	INTEGER,
+	"Reg_Query_Flag"	INTEGER,
+	PRIMARY KEY("Reg_ID" AUTOINCREMENT)
+)
+CREATE TABLE "Trans" (
+	"Tr_ID"	INTEGER,
+	"Tr_Type"	INTEGER,
+	"Tr_Reg_ID"	INTEGER,
+	"Tr_DOW"	INTEGER,
+	"Tr_Day"	INTEGER,
+	"Tr_Month"	INTEGER,
+	"Tr_Year"	INTEGER,
+	"Tr_Stat"	INTEGER,
+	"Tr_Query_Flag"	INTEGER,
+	"Tr_Amount"	REAL,
+	"Tr_Desc"	TEXT,
+	"Tr_Exp_ID"	INTEGER,
+	"Tr_ExpSub_ID"	INTEGER,
+	"Tr_Acc_From"	INTEGER,
+	"Tr_Acc_To"	INTEGER,
+	"Tr_FF_Journal_ID"	INTEGER,
+	PRIMARY KEY("Tr_ID" AUTOINCREMENT)
+)
+CREATE TABLE "Windows" (
+	"Win_ID"	INTEGER NOT NULL UNIQUE,
+	"Win_Name"	TEXT UNIQUE,
+	"Win_Left"	INTEGER,
+	"Win_Top"	INTEGER,
+	"Win_Width"	INTEGER,
+	"Win_Height"	INTEGER,
+	PRIMARY KEY("Win_ID" AUTOINCREMENT)
+)
+CREATE TABLE sqlite_sequence(name,seq)

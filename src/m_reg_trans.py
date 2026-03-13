@@ -6,7 +6,7 @@ from tkcalendar import Calendar
 import logging
 import ast
 from config import COLORS
-from db import  (fetch_years, fetch_subcategories, fetch_regular_for_year, fetch_category_name, fetch_subcategory_name, fetch_account_full_name,
+from db import  (fetch_subcategories, fetch_regular_for_year, fetch_category_name, fetch_subcategory_name, fetch_account_full_name,
                 delete_transaction, fetch_regular_by_id, fetch_account_full_names, fetch_inc_categories, fetch_exp_categories, fetch_category_id,
                 fetch_subcategory_id, fetch_account_id_by_name)
 from ui_utils import (open_form_with_position, close_form_with_position, sc)
@@ -24,22 +24,21 @@ except Exception as e:
 
 # Module-level month_names
 month_names = {
-    1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
-    7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"
+    1: "January", 2: "February", 3: "March", 4: "April", 5: "May", 6: "June",
+    7: "July", 8: "August", 9: "September", 10: "October", 11: "November", 12: "December"
 }
+month_names_reverse = {v: k for k, v in month_names.items()}
 
-def create_regular_transactions_maint_form(parent, conn, cursor):       # Win_ID = 3    
-    form = tk.Toplevel(parent)
+def create_regular_transactions_maint_form(root, conn, cursor, tree_refresh_callback):       # Win_ID = 3    
+    form = tk.Toplevel(root)
     win_id = 3
     open_form_with_position(form, conn, cursor, win_id, "Regular Transaction Maintenance")
     form.geometry(f"{sc(1620)}x{sc(800)}")  # Adjust size
-    #form.geometry("1600x800")
     form.resizable(False, False)
     form.configure(bg=config.master_bg)
     form.grab_set()
 
     # Variables
-    selected_year = tk.StringVar(value=str(datetime.today().year))
     refresh_needed = tk.BooleanVar(value=True)
     check_all_var = tk.BooleanVar(value=True)  # For Select/Clear All
     reg_records = []  # List to hold regular transaction data
@@ -50,16 +49,13 @@ def create_regular_transactions_maint_form(parent, conn, cursor):       # Win_ID
     chk_all = tk.Button(form, text="Select/Clear ALL Rows", font=(config.ha_large), 
                         command=lambda: toggle_all_checkboxes()).place(x=sc(25), y=sc(20), width=sc(180))
 
-    # Year Selection
-    tk.Label(form, text="Select Year:", font=(config.ha_button), bg=config.master_bg).place(x=sc(300), y=sc(25))
-    year_combo = ttk.Combobox(  form, textvariable=selected_year, values=fetch_years(cursor), 
-                                font=(config.ha_button), width=6, state="readonly")
-    year_combo.place(x=sc(390), y=sc(25))
-    year_combo.bind("<<ComboboxSelected>>", lambda e: refresh_needed.set(True))
+    # Year Label
+    year = root.year_var.get()
+    tk.Label(form, text=f"Year: {year}", font=(config.ha_head12), bg=config.master_bg).place(x=sc(300), y=sc(25))
 
     # Treeview styling
     style = ttk.Style()
-    style.configure("Treeview", font=(config.ha_normal))
+    style.configure("Treeview", font=(config.ha_normal), background="white")
     style.configure("Treeview.Heading", font=(config.ha_head11))
 
     # ListView (Treeview)
@@ -98,7 +94,7 @@ def create_regular_transactions_maint_form(parent, conn, cursor):       # Win_ID
     tk.Button(  form, text="New Regular Transaction", font=(config.ha_button), width=25,
                 command=lambda: new_regular()).place(x=sc(750), y=sc(750))
     tk.Button(  form, text="Close", font=(config.ha_button), bg=COLORS["exit_but_bg"], width=25,
-                command=lambda: close_form_with_position(form, conn, cursor, win_id)).place(x=sc(1300), y=sc(750))
+                command=lambda: [close_form_with_position(form, conn, cursor, win_id), tree_refresh_callback()]).place(x=sc(1300), y=sc(750))
 
     def toggle_all_checkboxes():
         state = check_all_var.get()
@@ -113,19 +109,21 @@ def create_regular_transactions_maint_form(parent, conn, cursor):       # Win_ID
         nonlocal reg_records
         if not refresh_needed.get():
             return
-        year = int(selected_year.get())
-        reg_records = fetch_regular_for_year(cursor, year)
+        iyear = int(root.year_var.get())
+        reg_records = fetch_regular_for_year(cursor, iyear)
+        count=len(reg_records)
+        #logger.debug(f"Regular record count: {count}")
         
         if not reg_records:
             if messagebox.askyesno("No Regular Records", 
                                 "No Regular records exist for the selected year. Copy from last year?"):
-                prev_year = year - 1
+                prev_year = iyear - 1
                 prev_records = fetch_regular_for_year(cursor, prev_year)
                 if not prev_records:
                     messagebox.showerror("No Records", "No Regular records exist for last year. Set up manually.")
                 else:
                     for rec in prev_records:
-                        rec["Reg_Year"] = year
+                        rec["Reg_Year"] = iyear
                         rec["Reg_Start"] = 0
                         if rec["Reg_Stop"] == 0:
                             cursor.execute(
@@ -133,11 +131,11 @@ def create_regular_transactions_maint_form(parent, conn, cursor):       # Win_ID
                                 "Reg_Amount, Reg_Desc, Reg_Start, Reg_Stop, Reg_Exp_ID, Reg_ExpSub_ID, "
                                 "Reg_Acc_From, Reg_Acc_To, Reg_Query_Flag) "
                                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                (year, rec["Reg_Frequency"], rec["Reg_Day"], rec["Reg_Month"], rec["Reg_Type"],
+                                (iyear, rec["Reg_Frequency"], rec["Reg_Day"], rec["Reg_Month"], rec["Reg_Type"],
                                 rec["Reg_Amount"], rec["Reg_Desc"], 0, 0, rec["Reg_Exp_ID"], rec["Reg_ExpSub_ID"],
                                 rec["Reg_Acc_From"], rec["Reg_Acc_To"], rec["Reg_Query_Flag"]))
                     conn.commit()
-                    reg_records = fetch_regular_for_year(cursor, year)
+                    reg_records = fetch_regular_for_year(cursor, iyear)
 
         tree.delete(*tree.get_children())
         tree_items.clear()
@@ -155,16 +153,16 @@ def create_regular_transactions_maint_form(parent, conn, cursor):       # Win_ID
                 "☐",
                 {1: "Monthly", 2: "Weekly", 3: "Yearly", 4: "2-Weekly", 5: "4-Weekly"}.get(rec["Reg_Frequency"], ""),
                 rec["Reg_Day"],
-                "" if rec["Reg_Month"] == 0 else datetime(2023, rec["Reg_Month"], 1).strftime("%B"),
+                "" if rec["Reg_Month"] == 0 else datetime(iyear, rec["Reg_Month"], 1).strftime("%B"),
                 {1: "Income", 2: "Expenditure", 3: "Transfer"}.get(rec["Reg_Type"], ""),
                 f"{rec['Reg_Amount']:.2f}   ",
                 rec["Reg_Desc"],
                 start_date,
                 stop_date,
-                fetch_category_name(cursor, rec["Reg_Exp_ID"], year),
-                fetch_subcategory_name(cursor, rec["Reg_Exp_ID"], rec["Reg_ExpSub_ID"], year),
-                fetch_account_full_name(cursor, rec["Reg_Acc_From"], year),
-                fetch_account_full_name(cursor, rec["Reg_Acc_To"], year),
+                fetch_category_name(cursor, rec["Reg_Exp_ID"], iyear),
+                fetch_subcategory_name(cursor, rec["Reg_Exp_ID"], rec["Reg_ExpSub_ID"], iyear),
+                fetch_account_full_name(cursor, rec["Reg_Acc_From"], iyear),
+                fetch_account_full_name(cursor, rec["Reg_Acc_To"], iyear),
                 "Set" if rec["Reg_Query_Flag"] else "-"
             )
             item = tree.insert("", "end", text=str((rec["Reg_ID"], rec["Reg_Acc_From"], rec["Reg_Acc_To"])), values=values, tags=("",))
@@ -174,15 +172,18 @@ def create_regular_transactions_maint_form(parent, conn, cursor):       # Win_ID
 
     def copy_selected_to_trans():
         selected = [tree.item(item)["values"] for item in tree_items if checked_items.get(item, False)]
+        #logger.debug(f"selected = {selected}")
         if not selected:
             messagebox.showerror("Error", "No rows selected for copying.")
             return
         today = datetime.today().toordinal() + 1721425
-        year = int(selected_year.get())
+        year = int(root.year_var.get())
         # Parse text tuple correctly
         selected_data = [ast.literal_eval(tree.item(item, "text")) for item in tree_items if checked_items.get(item, False)]
+        #logger.debug(f"selected_data = {selected_data}")
         selected_ids = [data[0] for data in selected_data]  # Reg_IDs
-        new_recs = generate_transactions(selected, selected_data, year, today)
+        new_recs = generate_transactions(selected, selected_data, year, today, cursor)
+        #logger.debug(f"new_recs = {new_recs}")
         if year < datetime.today().year:
             messagebox.showerror("Error", "Cannot apply Regular transactions to a previous year.")
             return
@@ -219,14 +220,14 @@ def create_regular_transactions_maint_form(parent, conn, cursor):       # Win_ID
             return
         reg_id = ast.literal_eval(tree.item(selected[0], "text"))[0]
         edit_form = tk.Toplevel(form)       # create child form so we can see when it closes
-        create_regular_transaction_form(form, edit_form, conn, cursor, reg_id, is_new=False)
+        create_regular_transaction_form(form, edit_form, conn, cursor, root, reg_id, is_new=False)
         form.wait_window(edit_form)         # pause until child form closes
         refresh_needed.set(True)
         refresh_list()
 
     def new_regular():
         edit_form = tk.Toplevel(form)       # create child form so we can see when it closes
-        create_regular_transaction_form(form, edit_form, conn, cursor, is_new=True)
+        create_regular_transaction_form(form, edit_form, conn, cursor, root, 0, is_new=True)
         form.wait_window(edit_form)         # pause until child form closes
         refresh_needed.set(True)
         refresh_list()
@@ -256,18 +257,17 @@ def create_regular_transactions_maint_form(parent, conn, cursor):       # Win_ID
         form.update_idletasks()
         form.update()
 
-def create_regular_transaction_form(parent, form, conn, cursor, curr_rec_id=0, is_new=False):   # Win_ID = 18
-    # form = tk.Toplevel(parent)
+def create_regular_transaction_form(parent, form, conn, cursor, root, curr_rec_id=0, is_new=False):   # Win_ID = 18
     win_id = 18
     open_form_with_position(form, conn, cursor, win_id, "Regular Transaction Entry/Edit")
     form.geometry(f"{sc(1400)}x{sc(300)}")  # Adjust size
-    #form.geometry("1400x300")
     form.resizable(False, False)
     form.configure(bg=config.master_bg)
     form.grab_set()
 
-    year = int(parent.children["!combobox"].get())  # Get year from parent form
+    year = int(root.year_var.get())  # Get year from root form
     reg_rec = {"Reg_ID": 0} if is_new else fetch_regular_by_id(cursor, curr_rec_id)
+    #logger.debug(f"fetched Regular record = {reg_rec}")
     if not is_new and not reg_rec:
         messagebox.showerror("Error", "A valid record was not found")
         form.destroy()
@@ -275,8 +275,9 @@ def create_regular_transaction_form(parent, form, conn, cursor, curr_rec_id=0, i
 
     # Variables
     frequency_var = tk.StringVar(value="Monthly" if is_new else {1: "Monthly", 2: "Weekly", 3: "Yearly", 4: "2-Weekly", 5: "4-Weekly"}.get(reg_rec["Reg_Frequency"], ""))
-    day_var = tk.StringVar(value="1" if is_new else str(reg_rec["Reg_Day"]))
-    month_var = tk.StringVar(value="" if is_new else datetime(2023, reg_rec["Reg_Month"], 1).strftime("%B") if reg_rec["Reg_Month"] else "")
+    day_var = tk.StringVar(value="1" if is_new else str(reg_rec["Reg_Day"]) if reg_rec["Reg_Frequency"] == 1 or reg_rec["Reg_Frequency"] == 3 else 
+                            {1: "Sunday", 2: "Monday", 3: "Tuesday", 4: "Wednesday", 5: "Thursday", 6: "Friday", 7: "Saturday"}.get(reg_rec["Reg_Day"]))
+    month_var = tk.StringVar(value="" if is_new else datetime(year, reg_rec["Reg_Month"], 1).strftime("%B") if reg_rec["Reg_Month"] else "")
     type_var = tk.StringVar(value="Expenditure" if is_new else {1: "Income", 2: "Expenditure", 3: "Transfer"}.get(reg_rec["Reg_Type"], ""))
     amount_var = tk.StringVar(value="" if is_new else f"{reg_rec['Reg_Amount']:.2f}")
     desc_var = tk.StringVar(value="" if is_new else reg_rec["Reg_Desc"])
@@ -287,6 +288,8 @@ def create_regular_transaction_form(parent, form, conn, cursor, curr_rec_id=0, i
     acc_from_var = tk.StringVar(value="" if is_new else fetch_account_full_name(cursor, reg_rec["Reg_Acc_From"], year))
     acc_to_var = tk.StringVar(value="" if is_new else fetch_account_full_name(cursor, reg_rec["Reg_Acc_To"], year))
     flag_var = tk.BooleanVar(value=False if is_new else bool(reg_rec["Reg_Query_Flag"]))
+    #logger.debug(f"at define - exp_cat_var = {exp_cat_var.get()}")
+    #logger.debug(f"at define - exp_sub_var = {exp_sub_var.get()}")
 
     # Widgets
     tk.Label(form, text="Frequency:", font=("Arial", 10), bg=config.master_bg).place(x=sc(50), y=sc(50))
@@ -317,14 +320,12 @@ def create_regular_transaction_form(parent, form, conn, cursor, curr_rec_id=0, i
     tk.Label(form, text="Start Date:", font=("Arial", 10), bg=config.master_bg).place(x=sc(400), y=sc(150))
     start_entry = tk.Entry(form, textvariable=start_var, font=("Arial", 10), state="readonly")
     start_entry.place(x=sc(500), y=sc(145), width=sc(150))
-    tk.Button(form, text="Cal", font=("Arial", 10), command=lambda: pick_date(start_entry, form)).place(x=sc(660), y=sc(145), 
-                                                                                                        width=sc(30))
+    tk.Button(form, text="Cal", font=("Arial", 10), command=lambda: pick_date(start_entry, form, year)).place(x=sc(660), y=sc(145), width=sc(30))
 
     tk.Label(form, text="Stop Date:", font=("Arial", 10), bg=config.master_bg).place(x=sc(400), y=sc(200))
     stop_entry = tk.Entry(form, textvariable=stop_var, font=("Arial", 10), state="readonly")
     stop_entry.place(x=sc(500), y=sc(195), width=sc(150))
-    tk.Button(form, text="Cal", font=("Arial", 10), command=lambda: pick_date(stop_entry, form)).place(x=sc(660), y=sc(195), 
-                                                                                                       width=sc(30))
+    tk.Button(form, text="Cal", font=("Arial", 10), command=lambda: pick_date(stop_entry, form, year)).place(x=sc(660), y=sc(195), width=sc(30))
 
     tk.Label(form, text="Exp Category:", font=("Arial", 10), bg=config.master_bg).place(x=sc(800), y=sc(50))
     exp_cat_combo = ttk.Combobox(form, textvariable=exp_cat_var, state="readonly", font=("Arial", 10))
@@ -365,14 +366,13 @@ def create_regular_transaction_form(parent, form, conn, cursor, curr_rec_id=0, i
             flag_var.set(True)
             flag_btn.config(text="Flag ON", bg=COLORS["flag_y_bg"])
 
-
-
     # Dynamic Behavior
     def update_frequency(*args):
         freq = frequency_var.get()
         if freq in ["Weekly", "2-Weekly", "4-Weekly"]:
             day_label.config(text="Day of Week:")
             day_combo.config(values=["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"])
+            #logger.debug(f"inside update_frequency(), day_var = {day_var.get()}")
             day_var.set("Monday" if day_var.get().isdigit() else day_var.get())
             month_combo.config(state="disabled")
             month_var.set("")
@@ -418,14 +418,16 @@ def create_regular_transaction_form(parent, form, conn, cursor, curr_rec_id=0, i
         cat = exp_cat_var.get()
         if cat and cat != "Ignore":
             exp_id = fetch_category_id(cursor, cat, year)
-            exp_sub_combo.config(values=fetch_subcategories(cursor, exp_id, year), state="normal")
+            subcats = fetch_subcategories(cursor, exp_id, year)
+            sub_names = [row[1] for row in subcats]
+            exp_sub_combo.config(values=sub_names, state="normal")
             if not exp_sub_var.get():
-                exp_sub_var.set(fetch_subcategories(cursor, exp_id, year)[0] if fetch_subcategories(cursor, exp_id, year) else "")
+                exp_sub_var.set(sub_names[0] if subcats else "")
         else:
             exp_sub_combo.config(state="disabled", values=[""])
             exp_sub_var.set("")
 
-    def pick_date(entry, parent_form):
+    def pick_date(entry, parent_form, year):
         cal = tk.Toplevel(parent_form)
         cal.title("Select Date")
         cal.grab_set()
@@ -440,22 +442,26 @@ def create_regular_transaction_form(parent, form, conn, cursor, curr_rec_id=0, i
 
         # Set initial date, handling invalid formats
         try:
-            current = datetime.strptime(entry.get(), "%d/%m/%Y") if entry.get() != "None" else datetime.today()
+            if entry.get() and entry.get() != "None":
+                current = datetime.strptime(entry.get(), "%d/%m/%Y")
+            else:
+                # Default to 1st January of selected year
+                current = datetime(year, 1, 1)
         except ValueError:
-            current = datetime.today()  # Fallback to today if date is invalid
+            # Invalid format → default to 1st Jan of selected year
+            current = datetime(year, 1, 1)
             if entry.get() != "None":
-                messagebox.showwarning("Warning", f"Invalid date format: {entry.get()}. Using today's date. Please use DD/MM/YYYY (e.g., 01/04/2025).")
+                messagebox.showwarning("Warning", f"Invalid date format: {entry.get()}. Using 01/01/{year}. Please use DD/MM/YYYY")
                 entry.delete(0, tk.END)
                 entry.insert(0, current.strftime("%d/%m/%Y"))
 
         # Create the calendar widget
-        current = datetime.strptime(entry.get(), "%d/%m/%Y") if entry.get() != "None" else datetime.today()
         calendar = Calendar(cal, selectmode="day", year=current.year, month=current.month, day=current.day, date_pattern="dd/mm/yyyy")
         
         # Pack the calendar and buttons
         calendar.pack(pady=10)
         tk.Button(cal, text="   OK   ", command=lambda: [entry.delete(0, tk.END), entry.insert(0, calendar.get_date()), 
-                                                         cal.destroy()]).pack(padx=sc(20), pady=sc(10))
+                                                        cal.destroy()]).pack(padx=sc(20), pady=sc(10))
         tk.Button(cal, text=" Clear ", command=lambda: [entry.delete(0, tk.END), entry.insert(0, "None"), 
                                                         cal.destroy()]).pack(padx=sc(20), pady=sc(10))
 
@@ -474,10 +480,13 @@ def create_regular_transaction_form(parent, form, conn, cursor, curr_rec_id=0, i
         reg["Reg_Year"] = year
         freq_map = {"Monthly": 1, "Weekly": 2, "Yearly": 3, "2-Weekly": 4, "4-Weekly": 5}
         reg["Reg_Frequency"] = freq_map.get(frequency_var.get(), 0)
-        reg["Reg_Day"] = int(day_var.get()) if day_var.get().isdigit() else {"Sunday": 1, "Monday": 2, "Tuesday": 3, "Wednesday": 4, "Thursday": 5, "Friday": 6, "Saturday": 7}.get(day_var.get(), 0)
+        #logger.debug(f"Reg_Frequency = {reg["Reg_Frequency"]}") ###
+        reg["Reg_Day"] = int(day_var.get()) if reg["Reg_Frequency"] == 1 or reg["Reg_Frequency"] == 3 else {"Sunday": 1, "Monday": 2, "Tuesday": 3, "Wednesday": 4, "Thursday": 5, "Friday": 6, "Saturday": 7}.get(day_var.get(), 0)
+        #logger.debug(f"Reg_Day = {reg["Reg_Day"]}") ###
         reg["Reg_Month"] = 0 if not month_var.get() else [datetime.strptime(m, "%B").month for m in [month_var.get()]][0]
         type_map = {"Income": 1, "Expenditure": 2, "Transfer": 3}
         reg["Reg_Type"] = type_map.get(type_var.get(), 0)
+        #logger.debug(f"Reg_Type = {reg["Reg_Type"]}") ###
         try:
             reg["Reg_Amount"] = float(amount_var.get())
             if not (0 <= reg["Reg_Amount"] <= 99999.99):
@@ -499,6 +508,9 @@ def create_regular_transaction_form(parent, form, conn, cursor, curr_rec_id=0, i
             return
         reg["Reg_Exp_ID"] = fetch_category_id(cursor, exp_cat_var.get(), year) if exp_cat_var.get() else 0
         reg["Reg_ExpSub_ID"] = fetch_subcategory_id(cursor, reg["Reg_Exp_ID"], exp_sub_var.get(), year) if exp_sub_var.get() else 0
+        #logger.debug(f"at save - exp_cat_var = {exp_cat_var.get()},  Reg_Exp_ID = {reg["Reg_Exp_ID"]}")
+        #logger.debug(f"at save - exp_sub_var = {exp_sub_var.get()},  Reg_ExpSub_ID = {reg["Reg_ExpSub_ID"]}")
+        
         reg["Reg_Acc_From"] = fetch_account_id_by_name(cursor, acc_from_var.get(), year) if acc_from_var.get() else 0
         reg["Reg_Acc_To"] = fetch_account_id_by_name(cursor, acc_to_var.get(), year) if acc_to_var.get() else 0
         reg["Reg_Query_Flag"] = 1 if flag_var.get() else 0
@@ -510,6 +522,13 @@ def create_regular_transaction_form(parent, form, conn, cursor, curr_rec_id=0, i
         if reg["Reg_Frequency"] in [2, 4, 5] and reg["Reg_Start"] == 0:
             messagebox.showerror("Error", "Weekly, 2-Weekly, and 4-Weekly require a Start Date")
             return
+        #logger.debug(f"reg[Reg_Day] = {reg["Reg_Day"]}")
+        #logger.debug(f"reg[Reg_Start] = {reg["Reg_Start"]}")
+        if reg["Reg_Frequency"] in [2, 4, 5]:
+            day_num = ((datetime.fromordinal(reg["Reg_Start"] - 1721425).weekday() + 1) % 7) + 1
+            if reg["Reg_Day"] != day_num :
+                messagebox.showerror("Error", "Weekly, 2-Weekly, and 4-Weekly require a Start Date that matches day of week")
+                return
         if reg["Reg_Type"] in [1, 2] and not exp_cat_var.get():
             messagebox.showerror("Error", "Please choose a Category")
             return
@@ -561,25 +580,25 @@ def create_regular_transaction_form(parent, form, conn, cursor, curr_rec_id=0, i
     exp_cat_var.trace("w", update_exp_cat)
     update_frequency()  # Initial setup
 
-def generate_transactions(selected, selected_data, year, today):
+def generate_transactions(selected, selected_data, year, today, cursor):
     new_recs = []
     freq_map = {"Monthly": 1, "Weekly": 2, "Yearly": 3, "2-Weekly": 4, "4-Weekly": 5}
     type_map = {"Income": 1, "Expenditure": 2, "Transfer": 3}
-    month_map = {v: k for k, v in enumerate([""] + [datetime(2023, m, 1).strftime("%B") for m in range(1, 13)], 1)}
+    #month_map = {v: k for k, v in enumerate([""] + [datetime(year, m, 1).strftime("%B") for m in range(1, 13)], 1)}
 
     for rec, (reg_id, acc_from, acc_to) in zip(selected, selected_data):
         freq = freq_map[rec[1]]
         day = int(rec[2])
-        month = month_map.get(rec[3], 0)
         tr_type = type_map[rec[4]]
         amount = float(rec[5].strip())
         desc = rec[6]
         start = 0 if rec[7] == "None" else datetime.strptime(rec[7], "%d/%m/%Y").toordinal() + 1721425
         stop = 0 if rec[8] == "None" else datetime.strptime(rec[8], "%d/%m/%Y").toordinal() + 1721425
-        exp_id = int(rec[9]) if rec[9].isdigit() else 0
-        exp_sub_id = int(rec[10]) if rec[10].isdigit() else 0
-        acc_to = 0 if tr_type == 2 else acc_to  # Force 0 for expenditure
-        acc_from = 0 if tr_type == 1 else acc_from  # Force 0 for income
+        exp_id = int(rec[9]) if rec[9].isdigit() else fetch_category_id(cursor, rec[9], year)
+        exp_sub_id = int(rec[10]) if rec[10].isdigit() else fetch_subcategory_id(cursor, exp_id, rec[10], year)
+        #logger.debug(f"exp_id = {exp_id},  exp_sub_id = {exp_sub_id}")
+        acc_to = 0 if tr_type == 2 else fetch_account_id_by_name(cursor, rec[12], year)
+        acc_from = 0 if tr_type == 1 else fetch_account_id_by_name(cursor, rec[11], year)
         flag = 1 if rec[13] == "Set" else 0
 
         if freq == 1:  # Monthly
@@ -603,6 +622,11 @@ def generate_transactions(selected, selected_data, year, today):
                                 "Tr_Query_Flag": flag, "Tr_Reg_ID": reg_id})
                 d += step
         elif freq == 3:  # Yearly
+            month = month_names_reverse.get(rec[3], 0)
+            logger.debug(f"Yearly profile {rec[0]}: tree month='{rec[3]}' → calculated month={month}")
+            if month < 1 or month > 12:
+                logger.error(f"Invalid month '{rec[3]}' for profile {rec[0]} - skipping")
+                continue
             new_recs.append({"Tr_Type": tr_type, "Tr_Day": day, "Tr_Month": month, "Tr_Year": year,
                             "Tr_Amount": amount, "Tr_Desc": desc, "Tr_Exp_ID": exp_id,
                             "Tr_ExpSub_ID": exp_sub_id, "Tr_Acc_From": acc_from, "Tr_Acc_To": acc_to,

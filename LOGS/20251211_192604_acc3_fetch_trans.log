@@ -1,0 +1,2 @@
+2025-12-11 19:26:04,507 - DEBUG - Fetching transactions for account 3 to BANK_TRANSACTIONS/20251211_192604_test_transactions_3.json
+2025-12-11 19:26:09,769 - ERROR - Failed to fetch transactions: [Errno 2] No such file or directory: 'BANK_TRANSACTIONS/20251211_192604_test_transactions_3.json'

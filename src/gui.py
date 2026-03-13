@@ -3,16 +3,16 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 from tkcalendar import Calendar
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 import traceback
 from config import COLORS
 from db import (insert_transaction, update_transaction, delete_transaction, fetch_notes, fetch_categories, fetch_subcategories,
-                fetch_account_full_names, fetch_statement_balances, update_account_month_transaction_total, fetch_transaction)
+                fetch_account_full_names, fetch_statement_balances, update_account_year_transactions, fetch_transaction)
 from ui_utils import (refresh_grid, open_form_with_position, close_form_with_position, sc)
 from gui_maint import (create_account_maint_form, create_category_maint_form, create_export_transactions_form,
                     create_colour_scheme_maint_form, create_account_years_maint_form, create_annual_budget_maint_form, 
-                    create_transaction_options_maint_form, create_form_positions_maint_form, create_ff_mappings_maint_form)
+                    create_transaction_options_maint_form, create_form_positions_maint_form)
 from gc_utils import (create_gocardless_maint_form, resource_path)
 from gui_maint_rules import (create_rules_form)
 from m_reg_trans import (create_regular_transactions_maint_form)
@@ -35,12 +35,14 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
     if not account_data or not isinstance(account_data, list) or not account_data[0]:
         raise ValueError("Invalid account_data structure")
     
-    # Extract acc_id from account_data
-    acc_id = account_data[0][0]
-    logger.debug(f"create_edit_form: acc_id={acc_id}, single_acc={single_acc}, default_acc_id={default_acc_id}")
+    #logger.debug(f"create_edit_form: account_data={account_data}")
+    #logger.debug(f"create_edit_form: selected_row={selected_row}")
 
     current_time = datetime.now()
-    day = current_time.day
+    if month == current_time.month and year == current_time.year:
+        day = current_time.day
+    else:
+        day = 1
         
     form = tk.Toplevel(parent)
     win_id = 17
@@ -168,6 +170,8 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
     amount_entry = tk.Entry(form, width=12, font=(config.ha_normal), justify="left")
     amount_entry.place(x=sc(530), y=sc(130))
 
+    cc_pay_lbl = tk.Label(form, text="Last Statement Balance", bg=config.master_bg, state="disabled", font=(config.ha_note))
+    cc_pay_lbl.place(x=sc(670), y=sc(110))
     cc_pay_btn = tk.Button(form, text="", anchor="w", font=(config.ha_normal), state="disabled", bg=config.master_bg)
     cc_pay_btn.place(x=sc(650), y=sc(125), width=sc(150))
 
@@ -176,28 +180,27 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
     desc_entry = tk.Entry(form, width=36, font=(config.ha_normal), justify="left")
     desc_entry.place(x=sc(530), y=sc(170))
 
-    # Fetch full account names for the selected year
-    full_accounts = [local_accounts[0]] if single_acc else fetch_account_full_names(cursor, year)
     # Default to first account or account matching default_acc_id for new transactions
-    default_acc_name = local_accounts[0]
-    if default_acc_id and not single_acc:
-        # Find account name matching default_acc_id
-        cursor.execute("SELECT Acc_Short_Name FROM Account WHERE Acc_ID = ? AND Acc_Year = ?", (default_acc_id, year))
-        result = cursor.fetchone()
-        default_acc_name = result[0] if result else full_accounts[0]
+    # Fetch full account names for the selected year
+    full_accounts = fetch_account_full_names(cursor, year)
+    if default_acc_id and single_acc:
+        default_acc_name = full_accounts[default_acc_id-1]
+    else:
+        # Use default account
+        default_acc_name = full_accounts[0]
     source_label = tk.Label(form, text="Source Account:", width=13, bg=config.master_bg, anchor=tk.E, font=(config.ha_normal))
     source_label.place(x=sc(400), y=sc(210))
-    source_var = tk.StringVar(value=default_acc_name if selected_row is None else full_accounts[0])
+    source_var = tk.StringVar(value=default_acc_name)
     source_menu = ttk.Combobox(form, state="readonly", textvariable=source_var, values=full_accounts, font=(config.ha_normal))
     source_menu.place(x=sc(530), y=sc(205), width=sc(180), height=sc(30))
-    source_menu.set(default_acc_name if selected_row is None else full_accounts[0])    
+    source_menu.set(default_acc_name)    
 
     dest_label = tk.Label(form, text="Destination Account:", width=16, bg=config.master_bg, anchor=tk.E, font=(config.ha_normal))
     dest_label.place(x=sc(378), y=sc(250))
-    dest_var = tk.StringVar(value=full_accounts[0])
-    dest_menu = ttk.Combobox(form, textvariable=dest_var, values=full_accounts, state="readonly", font=(config.ha_normal))
+    dest_var = tk.StringVar(value=default_acc_name)
+    dest_menu = ttk.Combobox(form, state="readonly", textvariable=dest_var, values=full_accounts, font=(config.ha_normal))
     dest_menu.place(x=sc(530), y=sc(245), width=sc(180), height=sc(30))
-    dest_menu.set(full_accounts[0])    
+    dest_menu.set(default_acc_name)    
 
     cat_label = tk.Label(form, text="Category:", width=13, bg=config.master_bg, anchor=tk.E, font=(config.ha_normal))
     cat_label.place(x=sc(400), y=sc(290))
@@ -224,17 +227,14 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
     notes_label.place(x=sc(530), y=sc(370))
 
     save_btn = tk.Button(form, text="Save Transaction", font=(config.ha_button))
-    save_btn.place(x=sc(650), y=sc(450), width=sc(150))
+    save_btn.place(x=sc(325), y=sc(450), width=sc(200))
+    cancel_btn = tk.Button(form, text="Cancel", font=(config.ha_button), bg=COLORS["exit_but_bg"], fg=COLORS["exit_but_tx"])
+    cancel_btn.place(x=sc(650), y=sc(450), width=sc(100))
     if selected_row is not None:
         history_btn = tk.Button(form, text="History", font=(config.ha_button))
         history_btn.place(x=sc(680), y=sc(50), width=sc(120))
         delete_btn = tk.Button(form, text="Delete Transaction", font=(config.ha_button), bg=COLORS["del_but_bg"], fg=COLORS["del_but_tx"])
         delete_btn.place(x=sc(50), y=sc(450), width=sc(150))
-        cancel_btn = tk.Button(form, text="Cancel", font=(config.ha_button), bg=COLORS["exit_but_bg"], fg=COLORS["exit_but_tx"])
-        cancel_btn.place(x=sc(375), y=sc(450), width=sc(100))
-    else:
-        cancel_btn = tk.Button(form, text="Cancel", font=(config.ha_button), bg=COLORS["exit_but_bg"], fg=COLORS["exit_but_tx"])
-        cancel_btn.place(x=sc(375), y=sc(450), width=sc(100))
 
     # Define functions after widgets to ensure all widgets are in scope
     def set_flag_edit(flag_new_value):
@@ -243,7 +243,8 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
         new_colour = flag_map_num.get(flag_new_value, "SystemWindow")
         desc_entry.configure(bg="SystemWindow" if current_colour == new_colour else new_colour)
 
-    def set_trans_type(ttype_flag, buttons, radio_var, checked_img, unchecked_img):
+    # Ignore Py errors stating these next 3 functions are unused
+    def set_trans_type(ttype_flag, buttons, radio_var, checked_img, unchecked_img):  # noqa: F811
         """
         Update transaction type radio buttons and set radio_var.
         
@@ -268,7 +269,7 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
         radio_var.set(value_map[ttype_flag])
         update_fields("", "", "")  # Placeholders, as args are not used
 
-    def set_status(status_flag, buttons, status_var, checked_img, unchecked_img):
+    def set_status(status_flag, buttons, status_var, checked_img, unchecked_img):  # noqa: F811
         """
         Update status radio buttons and set status_var.
         
@@ -291,9 +292,9 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
         
         # Set status_var and update fields
         status_var.set(value_map[status_flag])
-        update_fields("", "", "")  # Placeholders, as args are not used
+        #update_fields("", "", "")  # Placeholders, as args are not used
 
-    def update_fields(ignore, a, b):
+    def update_fields(ignore, a, b):  # noqa: F811
         """
         Update form fields based on selected transaction type.
         
@@ -328,6 +329,7 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
                 scat_label.configure(foreground=COLORS["black"])
                 cc_pay_btn.config(text="", state="disabled")
                 cc_pay_btn.place_forget()
+                cc_pay_lbl.place_forget()
                 ignore_box.configure(state="normal", foreground=COLORS["black"])
                 if ignore_checkbox_var.get() == 1:
                     toggle_ignore()
@@ -356,6 +358,7 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
                     scat_var.set("")
                 cc_pay_btn.config(text="", state="disabled")
                 cc_pay_btn.place_forget()
+                cc_pay_lbl.place_forget()
                 ignore_box.configure(state="normal", foreground=COLORS["black"])
                 if ignore_checkbox_var.get() == 1:
                     toggle_ignore()
@@ -385,6 +388,8 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
                         cc_pay_btn.config(text="<<   {:,.2f}".format(pay_amt), bg=COLORS["act_but_bg"], highlightbackground=COLORS["act_but_hi_bg"], state="active")
                         cc_pay_btn.place(x=sc(650), y=sc(125), width=sc(150))
                         cc_pay_btn.update()  # Force button redraw
+                        cc_pay_lbl.place(x=sc(670), y=sc(110))
+                        cc_pay_lbl.update()  # Force label redraw
                         #logger.debug(f"cc_pay_btn shown: text='<<   {pay_amt:,.2f}', bg={COLORS['act_but_bg']}")
                     else:
                         cc_pay_btn.config(bg=config.master_bg, highlightbackground=config.master_bg, state="disabled")
@@ -446,7 +451,7 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
         form.update_idletasks()  # Force redraw
 
     def save_transaction():
-        nonlocal tr_id
+        nonlocal tr_id, trans_data
         try:
             amount_str = amount_entry.get().strip()
             if not amount_str:
@@ -474,6 +479,8 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
                     raise ValueError("Source Account cannot be empty for Transfer")
                 if not dest_var.get().strip():
                     raise ValueError("Destination Account cannot be empty for Transfer")
+                if source_var.get().strip() == dest_var.get().strip():
+                    raise ValueError("Source and Destination Accounts cannot be same")
             if radio in ["Income", "Expense"]:
                 if not cat_var.get().strip():
                     raise ValueError("Category cannot be empty for Income or Expense")
@@ -490,8 +497,22 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
             day = date.day
             month = date.month
             year = date.year
+            now = datetime.now()
+            if status == 1: # Forecast
+                if date.date() < now.date():
+                    raise ValueError("Forecast transactions must have a date on or after today.")
+            elif status == 2: # Processing
+                if date.date() > now.date() + timedelta(days=1):
+                    raise ValueError("Processing transactions cannot be dated beyond tomorrow.")
+                ten_days_ago = now.date() - timedelta(days=10)
+                if date.date() < ten_days_ago:
+                    raise ValueError("Processing transactions must be within the last 10 days.")
+            elif status == 3: # Complete
+                if date.date() > now.date():
+                    raise ValueError("Complete transactions cannot be dated in the future.")
+                flag = 0
             source_idx = full_accounts.index(source_var.get()) + 1 if source_var.get() in full_accounts else 0
-            dest_idx = full_accounts.index(dest_var.get()) + 1 if dest_var.get() in full_accounts else 0
+            dest_idx = full_accounts.index(dest_var.get()) + 1 if dest_var.get() in full_accounts else 0 
             if ignore_checkbox_var.get() == 1:  # Checkbox is ticked
                 cat_pid = 99
                 subcat_cid = 0
@@ -503,28 +524,88 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
                 source_idx = 0
             elif radio == "Expense":
                 dest_idx = 0
+            new_data = {
+                'tr_type': type_map[radio],
+                'tr_day': day,
+                'tr_month': month,
+                'tr_year': year,
+                'tr_status': status,
+                'tr_flag': flag,
+                'tr_amount': amount,
+                'tr_desc': desc,
+                'tr_acc_from': source_idx,
+                'tr_acc_to': dest_idx,
+                'tr_exp_id': cat_pid,
+                'tr_expsub_id': subcat_cid,
+            }
+            now_str = now.strftime('%d/%m/%Y %H:%M:%S')
             if selected_row is not None and tr_id is not None:
+                old_data = {
+                    'tr_type': {"Income":1, "Expense":2, "Transfer":3}[trans_data["type"]],
+                    'tr_day': trans_data["day"],
+                    'tr_month': trans_data["month"],
+                    'tr_year': trans_data["year"],
+                    'tr_status': {"Forecast":1, "Processing":2, "Complete":3}[trans_data["status"]],
+                    'tr_flag': trans_data["flag"],
+                    'tr_amount': abs(trans_data["amount"]),
+                    'tr_desc': trans_data["desc"] or "",
+                    'tr_acc_from': trans_data["acc_from"] or 0,
+                    'tr_acc_to': trans_data["acc_to"] or 0,
+                    'tr_exp_id': trans_data["exp_id"] or 0,
+                    'tr_expsub_id': trans_data["expsub_id"] or 0,
+                }
+                changes = []
+                for key in new_data:
+                    if new_data[key] != old_data[key]:
+                        changes.append(f"{key.replace('tr_', 'Tr_')}: Old={old_data[key]}, New={new_data[key]}")
+                if changes:
+                    history_desc = f"Updated by user @ {now_str}\n" + "\n".join(changes)
+                else:
+                    history_desc = f"Updated by user @ {now_str}\nNo changes detected"
+                cursor.execute("INSERT INTO Trans_Rules (Tr_ID, HAI_ID, Rule_Desc) VALUES (?, ?, ?)", (tr_id, None, history_desc))
+                conn.commit()
                 update_transaction(cursor, conn, tr_id, type_map[radio], day, month, year, status, flag, amount, desc, source_idx, dest_idx, cat_pid, subcat_cid)
             else:
                 tr_id = insert_transaction(cursor, conn, type_map[radio], day, month, year, status, flag, amount, desc, source_idx, dest_idx, cat_pid, subcat_cid)
-            update_account_month_transaction_total(cursor, conn, month, year, local_accounts)
-            form.destroy()
+                history_desc = f"Created by user @ {now_str} , Tr_ID = {tr_id}"
+                cursor.execute("INSERT INTO Trans_Rules (Tr_ID, HAI_ID, Rule_Desc) VALUES (?, ?, ?)", (tr_id, None, history_desc))
+                conn.commit()
+            #logger.debug(f"calling - update_account_month_transaction_total - month={month}, year={year}")
+            update_account_year_transactions(cursor, conn, year, local_accounts)
+            close_form_with_position(form, conn, cursor, win_id)
             parent.selected_row.set(-1)
             tree.selection_remove(tree.selection())
             # Refresh the appropriate Treeview based on parent context
-            if hasattr(parent, 'refresh_tree'):
-                logger.debug("Refreshing account list Treeview")
-                parent.refresh_tree()
-            else:
-                logger.debug("Refreshing home screen Treeview")
-                rows[:] = fetch_month_rows(cursor, month, year, local_accounts, account_data)
-                refresh_grid(tree, rows, getattr(parent, 'marked_rows', set()), focus_day=str(day))
-            # Update the home screen if home_root is provided
-            if home_root and hasattr(home_root, 'update_ahb') and hasattr(home_root, 'get_current_month') and hasattr(home_root, 'year_var'):
-                current_month = home_root.get_current_month()
-                current_year = int(home_root.year_var.get())
-                logger.debug(f"Updating home screen AHB for month={current_month}, year={current_year}")
-                home_root.update_ahb(home_root, current_month, current_year)
+            if hasattr(parent, 'refresh_tree'):     # if so this is the single acc form
+                #logger.debug("Refreshing account list Treeview")
+                parent.refresh_tree(tr_id)
+            # Else this is the main home form
+            elif home_root and hasattr(home_root, 'update_ahb') and hasattr(home_root, 'get_current_month') and hasattr(home_root, 'year_var'):
+                #logger.debug(f"Refreshing home screen Treeview - current_month: {current_month}, current_year: {current_year}")
+                home_month = home_root.get_current_month()
+                home_year = int(home_root.year_var.get())
+                current = datetime.now()
+                is_current_month = True if home_month == current.month and home_year == current.year else False
+                # refetch rows for currently selected month/year as set on home form
+                rows[:] = fetch_month_rows(cursor, home_month, home_year, local_accounts, account_data)
+                home_root.update_ahb(home_root, home_month, home_year)
+                # check if the transaction date has been changed to a different month and/or year?
+                if month != home_month or year != home_year: 
+                    # transaction has moved to a different month/year than showing on the home form, so cannot use that as scroll focus
+                    
+                    
+                    if selected_row is not None:  # is it a New transaction or an Edit
+                        # Edit - so the nearest point we can scroll to, is that transaction's previous day value (as the original row no longer exists in the refreshed tree list)
+                        day = trans_data["day"]     # if trans date has been changed to a different month/year, use original date for refresh
+                        refresh_grid(tree, rows, is_current_month, getattr(parent, 'marked_rows', set()), None, focus_day=str(day))
+                    else:
+                        # New - so the date has been set in a different month to that currently showing in the home form - weird, but it could happen!
+                        refresh_grid(tree, rows, is_current_month, getattr(parent, 'marked_rows', set()), None, focus_day=1)
+                else:
+                    # transaction is still in the month/year of the home form, so use as scroll focus point
+                    if tr_id is not None:  # we have tr_id so use this to focus scroll point
+                        refresh_grid(tree, rows, is_current_month, getattr(parent, 'marked_rows', set()), focus_tr_id=tr_id)
+                
         except ValueError as e:
             logger.error(f"Validation failed: {e}")
             messagebox.showerror("Validation Error", str(e))
@@ -535,29 +616,29 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
     def delete_transaction_handler():
         if selected_row is not None and tr_id is not None:
             delete_transaction(cursor, conn, tr_id)
-        date_obj = cal.get_date()
-        date = datetime.strptime(date_obj, "%m/%d/%y")
-        day = date.day
-        form.destroy()
+        #date_obj = cal.get_date()
+        #date = datetime.strptime(date_obj, "%m/%d/%y")
+        #day = date.day
+        day = trans_data["day"]
+        update_account_year_transactions(cursor, conn, year, local_accounts)
+        close_form_with_position(form, conn, cursor, win_id)
         parent.selected_row.set(-1)
         tree.selection_remove(tree.selection())
         # Refresh the appropriate Treeview based on parent context
-        if hasattr(parent, 'refresh_tree'):
-            logger.debug("Refreshing account list Treeview")
+        if hasattr(parent, 'refresh_tree'):     # refresh single acc form
+            #logger.debug("Refreshing account list Treeview")
             parent.refresh_tree()
-        else:
-            logger.debug("Refreshing home screen Treeview")
-            rows[:] = fetch_month_rows(cursor, month, year, local_accounts, account_data)
-            refresh_grid(tree, rows, getattr(parent, 'marked_rows', set()), focus_day=str(day))
-        # Update the home screen if home_root is provided
-        if home_root and hasattr(home_root, 'update_ahb') and hasattr(home_root, 'get_current_month') and hasattr(home_root, 'year_var'):
+        elif home_root and hasattr(home_root, 'update_ahb') and hasattr(home_root, 'get_current_month') and hasattr(home_root, 'year_var'):
             current_month = home_root.get_current_month()
             current_year = int(home_root.year_var.get())
-            logger.debug(f"Updating home screen AHB for month={current_month}, year={current_year}")
+            #logger.debug("Refreshing home screen Treeview")
+            rows[:] = fetch_month_rows(cursor, month, year, local_accounts, account_data)
+            is_current_month = True if month == current_month and year == current_year else False
+            refresh_grid(tree, rows, is_current_month, getattr(parent, 'marked_rows', set()), focus_day=str(day))
             home_root.update_ahb(home_root, current_month, current_year)
 
     def show_history(parent, conn, cursor):
-        logger.debug("Show history clicked")
+        #("Show history clicked")
         hist_form = tk.Toplevel(parent)
         win_id = 28
         open_form_with_position(hist_form, conn, cursor, win_id, "Transaction History")
@@ -575,7 +656,7 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
         try:
             cursor.execute("SELECT Rule_Desc FROM Trans_Rules WHERE Tr_ID = ?", (tr_id,))
             rules = cursor.fetchall()
-            logger.debug(f"Retrieved {len(rules)} rules for Tr_ID {tr_id}: {rules}")
+            #logger.debug(f"Retrieved {len(rules)} rules for Tr_ID {tr_id}: {rules}")
         except Exception as e:
             logger.error(f"Error querying Trans_Rules for Tr_ID {tr_id}: {e}\n{traceback.format_exc()}")
             messagebox.showerror("Error", f"Failed to retrieve rule history: {e}", parent=hist_form)
@@ -589,7 +670,7 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
             rule_text = [rule[0] for rule in rules]  # Extract Rule_Desc from tuples
             formatted_text = "\n".join(f"{desc}" for i, desc in enumerate(rule_text))
             text_area.insert("1.0", formatted_text)
-            logger.debug(f"Inserted text: {formatted_text}")
+            #logger.debug(f"Inserted text: {formatted_text}")
         text_area.config(state="disabled")
         
         close_btn = tk.Button(hist_form, text="Close", font=(config.ha_button), bg=COLORS["exit_but_bg"], fg=COLORS["exit_but_tx"],
@@ -617,7 +698,7 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
 
     # Set up traces
     radio_var.trace("w", lambda *args: update_fields(*args))
-    status_var.trace("w", lambda *args: update_fields(*args))
+    #status_var.trace("w", lambda *args: update_fields(*args))
     cat_var.trace("w", update_subcategories)
     dest_var.trace("w", update_paycc)
 
@@ -629,9 +710,8 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
 
     # Handle existing transaction
     tr_id = None
-    if selected_row is not None and 0 <= selected_row < len(rows) and rows[selected_row]["status"] != "Total":
+    if selected_row is not None and 0 <= selected_row < len(rows) and rows[selected_row]["status"] != "Total" and rows[selected_row]["status"] != "TodayMarker":
         tr_id = rows[selected_row].get("tr_id")
-        logger.debug(f"selected_row = {selected_row},  tr_id = {tr_id}")
         if tr_id:
             trans_data = fetch_transaction(cursor, tr_id)
             if trans_data:
@@ -662,16 +742,18 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
                         cc_pay_btn.config(text="<<   {:,.2f}".format(pay_amt), bg=COLORS["act_but_bg"], highlightbackground=COLORS["act_but_hi_bg"], state="active")
                         cc_pay_btn.place(x=sc(650), y=sc(125), width=sc(150))
                         cc_pay_btn.update()  # Force button redraw
-                        #logger.debug(f"cc_pay_btn shown (existing transaction): text='<<   {pay_amt:,.2f}', bg={COLORS['act_but_bg']}")
+                        cc_pay_lbl.place(x=sc(670), y=sc(110))
+                        cc_pay_lbl.update()  # Force label redraw
                     else:
                         cc_pay_btn.config(bg=config.master_bg, highlightbackground=config.master_bg, state="disabled")
                         cc_pay_btn.place_forget()
-                        #logger.debug(f"cc_pay_btn hidden (existing transaction): bg={config.master_bg}, state=disabled")
+                        cc_pay_lbl.place_forget()
                 update_fields("", "", "")
                 if trans_data["exp_id"] and trans_data["type"] != "Transfer":
                     if trans_data["exp_id"] == 99:
                         ignore_box.configure(state="normal", foreground=COLORS["black"])
                         ignore_checkbox_var.set(1)
+                        ignore_box.config(image=checked_img)
                         ignore_label.configure(foreground=COLORS["black"])
                         cat_var.set("Ignore")
                         scat_var.set("")
@@ -692,15 +774,13 @@ def create_edit_form(parent, rows, tree, fetch_month_rows, selected_row=None, co
                         if cid == trans_data["expsub_id"]:
                             scat_var.set(desc)
                             break
-    else:
-        update_fields("", "", "")
 
     # Keep image references alive
     form.image_refs = image_refs
 
     form.wait_window()
 
-def show_maint_toolbox(parent, conn, cursor, refresh_callback):
+def show_maint_toolbox(parent, conn, cursor, colour_refresh_callback, tree_refresh_callback, focus_refresh_callback):
     toolbox = tk.Toplevel(parent)
     win_id = 14
     open_form_with_position(toolbox, conn, cursor, win_id, "Maintenance Forms")
@@ -711,16 +791,16 @@ def show_maint_toolbox(parent, conn, cursor, refresh_callback):
     tk.Label(toolbox, text="Maintenance Forms", font=(config.ha_head12)).pack(pady=5)
     tk.Button(toolbox, text="Manage Accounts", width=36,
             command=lambda: [close_form_with_position(toolbox, conn, cursor, win_id), 
-                            create_account_maint_form(parent, conn, cursor, root=parent)]).pack(pady=2)
-    tk.Button(toolbox, text="Manage Income/Expense Categories", width=36, bg=COLORS["home_test_bg"],
+                            create_account_maint_form(parent, conn, cursor, tree_refresh_callback, root=parent)]).pack(pady=2)
+    tk.Button(toolbox, text="Manage Income/Expense Categories", width=36,
             command=lambda: [close_form_with_position(toolbox, conn, cursor, win_id),
-                            create_category_maint_form(parent, conn, cursor)]).pack(pady=2)
+                            create_category_maint_form(parent, conn, cursor, tree_refresh_callback)]).pack(pady=2)
     tk.Button(toolbox, text="Manage Regular Transactions", width=36,
             command=lambda: [close_form_with_position(toolbox, conn, cursor, win_id),
-                            create_regular_transactions_maint_form(parent, conn, cursor)]).pack(pady=2)
+                            create_regular_transactions_maint_form(parent, conn, cursor, tree_refresh_callback)]).pack(pady=2)
     tk.Button(toolbox, text="Manage Colour Scheme", width=36, 
             command=lambda: [close_form_with_position(toolbox, conn, cursor, win_id),
-                            create_colour_scheme_maint_form(parent, conn, cursor, refresh_callback)]).pack(pady=2)
+                            create_colour_scheme_maint_form(parent, conn, cursor, colour_refresh_callback)]).pack(pady=2)
     tk.Button(toolbox, text="Manage Account Years", width=36, bg=COLORS["home_test_bg"], 
             command=lambda: [close_form_with_position(toolbox, conn, cursor, win_id),
                             create_account_years_maint_form(parent, conn, cursor)]).pack(pady=2)
@@ -732,10 +812,7 @@ def show_maint_toolbox(parent, conn, cursor, refresh_callback):
                             create_transaction_options_maint_form(parent, conn, cursor)]).pack(pady=2)
     tk.Button(toolbox, text="Manage Form Window Positions", width=36, 
             command=lambda: [close_form_with_position(toolbox, conn, cursor, win_id),
-                            create_form_positions_maint_form(parent, conn, cursor)]).pack(pady=2)
-    tk.Button(toolbox, text="Manage FF Category Mappings", width=36, bg=COLORS["home_test_bg"], 
-            command=lambda: [close_form_with_position(toolbox, conn, cursor, win_id),
-                            create_ff_mappings_maint_form(parent, conn, cursor)]).pack(pady=2)
+                            create_form_positions_maint_form(parent, conn, cursor, focus_refresh_callback)]).pack(pady=2)
     tk.Button(toolbox, text="Export Transactions to .CSV file", width=36, bg=COLORS["home_test_bg"], 
             command=lambda: [close_form_with_position(toolbox, conn, cursor, win_id),
                             create_export_transactions_form(parent, conn, cursor)]).pack(pady=2)

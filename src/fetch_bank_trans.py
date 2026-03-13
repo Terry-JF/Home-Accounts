@@ -8,9 +8,15 @@ from config import get_config, init_config
 from db import open_db
 from gc_utils import get_access_token, fetch_transactions
 from rules_engine import process_transactions, cleanup_ha_import
+import argparse
 
-# Initialize configuration (sets up logging and directories)
-init_config()
+# Parse command-line args
+parser = argparse.ArgumentParser(description="Fetch bank transactions")
+parser.add_argument('--env', choices=['test', 'live'], help="Force environment (test/live); overrides .env")
+args = parser.parse_args()
+
+# Initialize configuration (sets up logging and directories for GC import)
+init_config("GC", args.env)
 
 def main():
     """Fetch and process bank transactions."""
@@ -38,7 +44,7 @@ def main():
             return
         
         for acc_id, requisition_id, fetch_days in accounts:
-            json_path = os.path.join(get_config('BANK_DIR'), f"{timestamp}_transactions_{acc_id}.json")
+            json_path = os.path.join(get_config('BANK_PATH'), f"{timestamp}_transactions_{acc_id}.json")
             logger.debug(f"Fetching transactions for account {acc_id}, requisition {requisition_id}, days {fetch_days}")
             fetch_transactions(access_token, requisition_id, json_path, fetch_days, conn, acc_id)
             logger.debug(f"Processing transactions for account {acc_id}")

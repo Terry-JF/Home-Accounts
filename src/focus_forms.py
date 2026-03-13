@@ -3,7 +3,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import datetime
 import logging
-from db import  (fetch_years, fetch_categories, fetch_subcategories, fetch_actuals)
+from db import  (fetch_categories, fetch_subcategories, fetch_actuals)
 from ui_utils import (open_form_with_position, close_form_with_position, sc)
 from config import COLORS
 import config
@@ -24,7 +24,8 @@ month_names = {
     7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"
 }
 
-def create_summary_form(parent, conn, cursor):                          # Win_ID = 4 
+
+def create_summary_form(parent, conn, cursor, year, tree_refresh_callback):                          # Win_ID = 4 
     form = tk.Toplevel(parent)
     win_id = 4
     open_form_with_position(form, conn, cursor, win_id, "Summary")
@@ -35,17 +36,17 @@ def create_summary_form(parent, conn, cursor):                          # Win_ID
     form.grab_set()
 
     # Variables
-    selected_year = tk.StringVar(value=str(datetime.today().year))
+    #selected_year = tk.StringVar(value=str(datetime.today().year))
     refresh_needed = tk.BooleanVar(value=True)
     selected_row = tk.StringVar()
     is_expanded = tk.BooleanVar(value=False)  # Track expansion state
 
     # Year Selection
-    tk.Label(form, text="Year:", font=(config.ha_button), bg=config.master_bg).place(x=sc(20), y=sc(20))
-    year_combo = ttk.Combobox(  form, textvariable=selected_year, values=fetch_years(cursor), 
-                                font=(config.ha_button), width=6, state="readonly")
-    year_combo.place(x=sc(60), y=sc(20))
-    year_combo.bind("<<ComboboxSelected>>", lambda e: refresh_needed.set(True))
+    tk.Label(form, text=(f"Year: {year}"), font=(config.ha_large), bg=config.master_bg).place(x=sc(40), y=sc(20))
+    #year_combo = ttk.Combobox(  form, textvariable=selected_year, values=fetch_years(cursor), 
+    #                           font=(config.ha_button), width=6, state="readonly")
+    #year_combo.place(x=sc(60), y=sc(20))
+    #year_combo.bind("<<ComboboxSelected>>", lambda e: refresh_needed.set(True))
 
     # Treeview
     columns = ("Category", "Bfwd", "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC", "TOTALS", "AVG/Month")
@@ -74,7 +75,7 @@ def create_summary_form(parent, conn, cursor):                          # Win_ID
     drill_down_button.place(x=sc(1480), y=sc(20))
 
     tk.Button(form, text="Close", width=20, font=(config.ha_button), bg=COLORS["exit_but_bg"],
-                command=lambda: close_form_with_position(form, conn, cursor, win_id)).place(x=sc(1480), y=sc(60))
+                command=lambda: [close_form_with_position(form, conn, cursor, win_id), tree_refresh_callback()]).place(x=sc(1480), y=sc(60))
 
     # User guide
     user_guide=tk.Label(form, text="(double-click a parent row to open/close that category)", font=(config.ha_note), background=config.master_bg)
@@ -162,7 +163,7 @@ def create_summary_form(parent, conn, cursor):                          # Win_ID
             pid, cid = int(pid), int(cid)
         except ValueError:
             return
-        year = int(selected_year.get())
+        #year = int(selected_year.get())
 
         dd_form = tk.Toplevel(form)
         open_form_with_position(dd_form, conn, cursor, 19, "Transactions making up this row of the Summary")
@@ -181,7 +182,7 @@ def create_summary_form(parent, conn, cursor):                          # Win_ID
         dd_tree.configure(yscrollcommand=scrollbar.set)
         
         dd_tree.tag_configure("total", background=COLORS["act_but_bg"], font=(config.ha_normal))
-        dd_tree.tag_configure("marked", background=COLORS["flag_mk_bg"], font=(config.ha_normal))
+        dd_tree.tag_configure("marked", background=COLORS["flag_dd_bg"], font=(config.ha_normal))
         dd_tree.tag_configure("forecast", foreground=COLORS["forecast_tx"], font=(config.ha_normal))
         dd_tree.tag_configure("processing", foreground=COLORS["pending_tx"], font=(config.ha_normal))
         dd_tree.tag_configure("complete", foreground=COLORS["complete_tx"], font=(config.ha_normal))
@@ -227,7 +228,7 @@ def create_summary_form(parent, conn, cursor):                          # Win_ID
 
         tk.Button(  dd_form, text="Close", font=(config.ha_button), bg=COLORS["exit_but_bg"],
                     command=lambda: close_form_with_position(dd_form, conn, cursor, 19)).place(x=sc(450), y=sc(890), width=sc(100))
-        tk.Button(  dd_form, text="Mark (space)", font=(config.ha_button),
+        tk.Button(  dd_form, text="Tag (space)", font=(config.ha_button),
                     command=lambda: toggle_mark()).place(x=sc(50), y=sc(890), width=sc(100))
 
         def toggle_mark():
@@ -265,7 +266,7 @@ def create_summary_form(parent, conn, cursor):                          # Win_ID
     def refresh_data():
         if not refresh_needed.get():
             return
-        year = int(selected_year.get())
+        #year = int(selected_year.get())
         #prev_year = year - 1
         tree.delete(*tree.get_children())
 
@@ -368,9 +369,10 @@ def create_summary_form(parent, conn, cursor):                          # Win_ID
         cash_balances = [fetch_account_balance(range(1, 7), m, year) for m in range(1, 13)]
         cash_bfwd = fetch_bfwd_balance(range(1, 7), year)
         cash_changes = [cash_balances[0] - cash_bfwd] + [cash_balances[m] - cash_balances[m-1] for m in range(1, 12)]
+        #logger.debug(f"cash_balances={cash_balances}, cash_bfwd={cash_bfwd}")
         
-        credit_balances = [fetch_account_balance(range(7, 13), m, year) for m in range(1, 13)]
-        credit_bfwd = fetch_bfwd_balance(range(7, 13), year)
+        credit_balances = [fetch_account_balance(range(7, 12), m, year) for m in range(1, 13)]
+        credit_bfwd = fetch_bfwd_balance(range(7, 12), year)
         credit_changes = [credit_balances[0] - credit_bfwd] + [credit_balances[m] - credit_balances[m-1] for m in range(1, 12)]
         
         invest_balances = [fetch_account_balance([13], m, year) for m in range(1, 13)]
@@ -385,23 +387,32 @@ def create_summary_form(parent, conn, cursor):                          # Win_ID
         net_bfwd = cash_bfwd + credit_bfwd + invest_bfwd + loan_bfwd
         net_changes = [net_positions[0] - net_bfwd] + [net_positions[m] - net_positions[m-1] for m in range(1, 12)]
 
+        # Helper to get change description
+        def get_change_text(val, pos_label, neg_label):
+            if val == 0.0:
+                return "No Change"
+            elif val > 0:
+                return pos_label
+            else:
+                return neg_label
+
         eom_rows = [
-            ("Monthly Inc-Exp", False, monthly_inc_exp, True, inc_exp_total, False),
-            ("", False, [], False, 0.0, False),
-            ("EOM Cash Balance", True, cash_balances, False, 0.0, False),
-            ("EOM Cash Change", False, cash_changes, True, sum(cash_changes), False),
-            ("", False, [], False, 0.0, False),
-            ("EOM Credit Balance", True, credit_balances, False, 0.0, False),
-            ("EOM Credit Change", False, credit_changes, True, sum(credit_changes), False),
-            ("", False, [], False, 0.0, False),
-            ("EOM Investments", True, invest_balances, False, 0.0, False),
-            ("EOM Invest Change", False, invest_changes, True, sum(invest_changes), False),
-            ("", False, [], False, 0.0, False),
-            ("EOM Loans Balance", True, loan_balances, False, 0.0, False),
-            ("EOM Loans Change", False, loan_changes, True, sum(loan_changes), False),
-            ("", False, [], False, 0.0, False),
-            ("Net Position", True, net_positions, False, 0.0, False),
-            ("Net Position Change", False, net_changes, True, sum(net_changes), False)
+            ("Monthly Inc-Exp", False, monthly_inc_exp, True, inc_exp_total, False, "Saved", "Overspent"),
+            ("", False, [], False, 0.0, False, "", ""),
+            ("EOM Cash Balance", True, cash_balances, False, 0.0, False, "", ""),
+            ("EOM Cash Change", False, cash_changes, True, sum(cash_changes), False, "Cash Increased", "Cash Reduced"),
+            ("", False, [], False, 0.0, False, "", ""),
+            ("EOM Credit Balance", True, credit_balances, False, 0.0, False, "", ""),
+            ("EOM Credit Change", False, credit_changes, True, sum(credit_changes), False, "Repaid", "Borrowed"),
+            ("", False, [], False, 0.0, False, "", ""),
+            ("EOM Investments", True, invest_balances, False, 0.0, False, "", ""),
+            ("EOM Invest Change", False, invest_changes, True, sum(invest_changes), False, "Increased", "Reduced"),
+            ("", False, [], False, 0.0, False, "", ""),
+            ("EOM Loans Balance", True, loan_balances, False, 0.0, False, "", ""),
+            ("EOM Loans Change", False, loan_changes, True, sum(loan_changes), False, "Repaid", "Borrowed"),
+            ("", False, [], False, 0.0, False, "", ""),
+            ("Net Position", True, net_positions, False, 0.0, False, "", ""),
+            ("Net Position Change", False, net_changes, True, sum(net_changes), False, "Improved", "Worsened")
         ]
 
         bfwd_map = {
@@ -412,23 +423,34 @@ def create_summary_form(parent, conn, cursor):                          # Win_ID
             "Net Position": net_bfwd
         }
 
-        for desc, use_bfwd, monthly, use_totals, total, use_avg in eom_rows:
+        for desc, use_bfwd, monthly, use_totals, total, use_avg, pos_label, neg_label in eom_rows:
             bfwd = ""
             if use_bfwd and desc in bfwd_map:
-                bfwd = "" if bfwd_map[desc] == 0.0 else f"{bfwd_map[desc]:,.2f}  "
+                bfwd_val = bfwd_map[desc]
+                bfwd = "" if bfwd_val == 0.0 else f"{bfwd_val:,.2f}  "
 
-            values = [f"   {desc}" if desc else ""] + [bfwd] + \
-                    ["" if m == 0.0 else f"{m:,.2f}  " for m in monthly] + \
-                    ["" if total == 0.0 else f"{total:,.2f}  " if use_totals else ""] + \
-                    ["" if use_avg else ""]
+            # Build monthly values
+            monthly_vals = ["" if m == 0.0 else f"{m:,.2f}  " for m in monthly]
+
+            # TOTALS column (index 14)
+            totals_val = "" if total == 0.0 else f"{total:,.2f}  "
+
+            # Avg/Month column (index 15) - only for change rows
+            avg_text = ""
+            if use_totals and pos_label:  # Only change rows have pos/neg labels
+                avg_text = get_change_text(total, pos_label, neg_label)
+
+            values = [f"   {desc}" if desc else ""] + [bfwd] + monthly_vals + \
+                    [totals_val if use_totals else ""] + [avg_text]
+
             if not desc:  # Blank rows
                 values = [""] * 16
             tree.insert(eom_parent, "end", text="", values=values, tags=("child",))
-
+            
         refresh_needed.set(False)
 
     def show_monthly_focus(month):
-        create_monthly_focus_form(form, conn, cursor, int(selected_year.get()), month)
+        create_monthly_focus_form(form, conn, cursor, year, month)
 
     def on_tree_select(event):
         selected = tree.selection()

@@ -2,16 +2,15 @@
 # Centralized configuration for Home Accounts project
 
 import os
-from dotenv import load_dotenv
+#from dotenv import load_dotenv
+import tkinter as tk
 import sqlite3
 import logging
+#from dotenv import load_dotenv
 from logging.handlers import TimedRotatingFileHandler
 from datetime import datetime, timedelta
 import shutil
 import glob
-
-# Load .env file from project root
-load_dotenv()
 
 # Set up logging
 logger = logging.getLogger('HA.config')
@@ -23,6 +22,7 @@ log_levels = {
     'warning': logging.WARNING,
     'error': logging.ERROR
 }
+
 # Set up Fonts - standardise use of fonts across app
 ha_normal = "Arial", 10
 ha_normal_bold = "Arial", 10, "bold"
@@ -39,30 +39,13 @@ ha_head12 = "Arial", 12, "bold"
 ha_head14 = "Arial", 14, "bold"
 ha_head16 = "Arial", 16, "bold"
 
+scroll_row = 1 # Global - default, will be overwritten by DB value
 
 # Base directory for the project
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Configuration dictionaries
-CONFIG = {
-    'APP_ENV': os.getenv('APP_ENV', 'test'),
-    'APP_DEBUG': os.getenv('APP_DEBUG', 'True').lower() == 'true',
-    'APP_LOG_LEVEL': os.getenv('APP_LOG_LEVEL', 'debug').lower(),
-    'DATA_DIR': os.getenv('DATA_DIR', 'C:/HA-Data/database'),
-    'LOG_DIR': os.getenv('LOG_DIR', 'C:/HA-Data/LOGS'),
-    'BANK_DIR': os.getenv('BANK_DIR', 'C:/HA-Data/BANK_TRANSACTIONS'),
-    'DB_PATH': os.getenv('DB_PATH', 'C:/HA-Data/database/HAtest.db'),
-    'DB_PATH_TEST': os.getenv('DB_PATH_TEST', 'C:/HA-Data/database/HAtest.db'),
-    'BACKUP_DIR': os.getenv('BACKUP_DIR', 'c:/HA-Data/database/BACKUP/'),
-    'API_BASE_URL': os.getenv('API_BASE_URL', 'https://bankaccountdata.gocardless.com/api/v2'),
-    'VENV_DIR': os.getenv('VENV_DIR', 'C:/HA-Project/.venv'),
-    # Below values are defaults - actual are loaded from Settings table in db, but prob the same
-    'EXPIRY_WARNING_DAYS': 10,
-    'LOG_DAYS_TO_KEEP': 10,
-    'TOKEN_MARGIN': 60,
-    'REQUISITION_VALIDITY_DAYS': 90,
-    'IMPORT_DAYS_TO_KEEP': 30
-}
+# Configuration dictionary
+CONFIG = {}
 
 # Colour palette dictionaries
 DEFAULT_COLORS = {                    # Should never change - used to reset the pallette if the user requests this
@@ -111,7 +94,7 @@ DEFAULT_COLORS = {                    # Should never change - used to reset the 
     "grey": "#5D5D5D",              # default disabled widget text
 }
 
-COLORS = {                            # The active pallette - loaded from database at startup, can be edited by user, and saved to database
+COLORS = {                            # The active pallette - loaded from database at startup, can be edited by user, and re-saved to database
     # Background colours
     "home_bg": "#DFFFFF",           # very_pale_blue    Main Form BG                            seashell
     "home_test_bg": "#F0D0D0",      # very_pale_pink    Main Form BG - TEST mode
@@ -170,7 +153,7 @@ COLORS = {                            # The active pallette - loaded from databa
     "pink": "#FADBFD",
     "dark_brown": "#803624",
     "orange": "#FFC993",
-    "grey": "#E0E0E0",
+    #"grey": "#E0E0E0",
     "pale_green": "#E0FFE0",
     "pale_grey": "#F0F0F0",
     "blue": "#0000FF",
@@ -188,7 +171,10 @@ COLORS = {                            # The active pallette - loaded from databa
     "oldlace2": "#F2EDE0"
 }
 
-# Legacy color mappings (reference for migration, not used at runtime)
+# Global icon cache
+ICON_CACHE = {}
+
+# Legacy color mappings (reference for migration, not used at runtime) - is this used anywhere?
 LEGACY_COLOR_MAP = {
     "white": "tran_wk_bg",
     "oldlace": "tran_we_bg",
@@ -305,31 +291,28 @@ def load_colors_from_db(db_path):
                     legacy_keys = [k for k, v in LEGACY_COLOR_MAP.items() if v == key]
                     for legacy_key in legacy_keys:
                         COLORS[legacy_key] = DEFAULT_COLORS[key]
-                        logger.debug(f"Fallback to DEFAULT_COLORS[{legacy_key}] = {DEFAULT_COLORS[key]}")
-                    logger.debug(f"Fallback to DEFAULT_COLORS[{key}] = {DEFAULT_COLORS[key]}")
+                        #logger.debug(f"Fallback to DEFAULT_COLORS[{legacy_key}] = {DEFAULT_COLORS[key]}")
+                    #logger.debug(f"Fallback to DEFAULT_COLORS[{key}] = {DEFAULT_COLORS[key]}")
 
         conn.close()
     except Exception as e:
         logger.error(f"Failed to load colors from database: {e}")
         COLORS.update(DEFAULT_COLORS)  # Fallback to defaults
-        logger.debug("Reverted to DEFAULT_COLORS")
+        #logger.debug("Reverted to DEFAULT_COLORS")
 
 def load_db_settings():
     global master_bg, COLORS, scaling_factor
+    global scroll_row
 
     # Set up logging
     logger = logging.getLogger('HA.db_setup')
     
     # Get correct DB and set master_bg colour
-    if CONFIG['APP_ENV'] == 'test':
-        dbpath = get_config('DB_PATH_TEST')
-    else:
-        dbpath = get_config('DB_PATH')
-        
-    logger.debug(f"Opening database: {dbpath}")
+    dbpath = get_config('DB_PATH')
+    #logger.debug(f"Opening database: {dbpath}")
     
     """Backup the current database."""
-    backup_dir = get_config('BACKUP_DIR')
+    backup_dir = get_config('BACKUP_PATH')
     if os.path.exists(dbpath):
         try:
             # Create timestamped backup path: BACKUP/YYYY/MM/HAtest.db-YYYY.MM.DD.HH.MM.SS
@@ -372,6 +355,12 @@ def load_db_settings():
     except sqlite3.Error as e:
         logger.error(f"Failed to load settings from database: {e}")
         
+    cursor.execute("SELECT value FROM settings WHERE key = 'SCROLL_ROW'")
+    row = cursor.fetchone()
+    if row:
+        scroll_row = int(row[0])   # Updates the global
+    #logger.debug(f"load_db_settings scroll_row = {scroll_row}")
+        
     """Load master background colour setting from the database."""
     try:
         with sqlite3.connect(dbpath) as conn:
@@ -383,7 +372,7 @@ def load_db_settings():
             master_bg_result = cursor.fetchone()
             global master_bg
             master_bg = master_bg_result[0] if master_bg_result else ('#F0D0D0',)
-            logger.debug(f"master_bg: {master_bg}")
+            #logger.debug(f"master_bg: {master_bg}")
     except sqlite3.Error as e:
         logger.error(f"Failed to load master background color: {e}")
         master_bg = ('#F0D0D0',)
@@ -391,50 +380,86 @@ def load_db_settings():
 def setup_logging():
     """Configure logging with file and optional console handlers, and clean up old backups."""
     logger = logging.getLogger('HA')
-    logger.setLevel(log_levels.get(CONFIG['APP_LOG_LEVEL'], logging.DEBUG))
+    logger.setLevel(log_levels.get(get_config('APP_LOG_LEVEL'), logging.DEBUG))
 
     # Clear any existing handlers to prevent duplicates
     logger.handlers.clear()
 
     # File handler with rotation
-    log_file = os.path.join(CONFIG['LOG_DIR'], 'app.log')
+    log_file = os.path.join(get_config('LOG_PATH'), 'app.log')
     file_handler = TimedRotatingFileHandler(
         log_file,
         when='midnight',
         interval=1,
-        backupCount=CONFIG['LOG_DAYS_TO_KEEP']
+        backupCount=get_config('LOG_DAYS_TO_KEEP')
     )
     file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(file_handler)
 
     # Console handler (optional, only for interactive runs)
-    if CONFIG['APP_DEBUG']:
+    if get_config('APP_DEBUG'):
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
         logger.addHandler(console_handler)
 
     # Clean up old log files and database backups
-    cutoff_date = datetime.now() - timedelta(days=CONFIG['LOG_DAYS_TO_KEEP'])
-    logger.debug(f"Cleaning up logs and backups older than {cutoff_date.strftime('%Y-%m-%d')}")
+    cutoff_date = datetime.now() - timedelta(days=get_config('LOG_DAYS_TO_KEEP')+1)
+    #logger.debug(f"Cleaning up logs and backups older than {cutoff_date.strftime('%Y-%m-%d')}")
 
     # Clean up old log files
-    log_dir = CONFIG['LOG_DIR']
+    log_dir = get_config('LOG_PATH')
     for log_file in glob.glob(os.path.join(log_dir, 'app.log.*')):
         try:
             file_mtime = datetime.fromtimestamp(os.path.getmtime(log_file))
             if file_mtime < cutoff_date:
                 os.remove(log_file)
-                logger.debug(f"Deleted old log file: {log_file}")
+                #logger.debug(f"Deleted old log file: {log_file}")
         except (OSError, ValueError) as e:
             logger.error(f"Failed to delete old log file {log_file}: {e}")
 
+def load_icon_cache():
+    """Load and cache all icons used in the HA program to prevent garbage collection."""
+    icon_definitions = [
+        # Map icon key to filename (replace with actual icon filenames)
+        ("drag",        "1_drag-48.png"),
+        ("edit",        "2_edit-48.png"),
+        ("trash",       "3_trash-48.png"),
+        ("up_l",        "3_up-48.png"),
+        ("down_l",      "4_down-48.png"),
+        ("see_match",   "4_see_match-48.png"),
+        ("apply_rule",  "5_apply_rule-48.png"),
+        ("duplicate",   "6_duplicate-48.png"),
+        ("up_s",        "7_up-24.png"),
+        ("down_s",      "8_down-24.png"),
+        ("checked",     "checked_16.png"),
+        ("unchecked",   "unchecked_16.png"),
+        ("radio_0_l",   "radio_0_32.png"),
+        ("radio_1_l",   "radio_1_32.png"),
+        ("radio_0_s",   "radio_0_16.png"),
+        ("radio_1_s",   "radio_1_16.png")
+    ]
+    
+    global ICON_CACHE
+    ICON_CACHE.clear()  # Clear any existing cache
+    for key, filename in icon_definitions:
+        try:
+            relative_path = (f"src/icons/{filename}")
+            icon_path = os.path.join(BASE_DIR, relative_path)
+            ICON_CACHE[key] = tk.PhotoImage(file=icon_path)
+            #logger.debug(f"Loaded icon: {key} ({filename}) - icon_path = {icon_path}")
+        except tk.TclError as e:
+            logger.error(f"Failed to load icon {filename}: {e}")
+            ICON_CACHE[key] = None  # Store None to avoid repeated attempts
+    
+    #logger.debug(f"Icon cache initialized with {len(ICON_CACHE)} icons")
+
 # Clean up old database backups
 def cleanup_old_files():
-    """Clean up old logs and database backups."""
+    """Clean up old database backups."""
     # Set cutoff date to the first of the current month
     current_date = datetime.now()
     cutoff_date = datetime(current_date.year, current_date.month, 1)
-    logger.debug(f"Cleaning up logs and backups older than {cutoff_date.strftime('%Y-%m-%d')}")
+    #logger.debug(f"Cleaning up database backups older than {cutoff_date.strftime('%Y-%m-%d')}")
     
     # Clean up old database backups
     backup_dir = CONFIG['BACKUP_DIR']
@@ -447,7 +472,7 @@ def cleanup_old_files():
                     dir_date = datetime(year, month, 1)
                     # Only delete directories strictly older than the cutoff month
                     if dir_date < cutoff_date and (year < cutoff_date.year or (year == cutoff_date.year and month < cutoff_date.month)):
-                        logger.debug(f"Deleting old backup directory: {month_dir} (dir_date={dir_date})")
+                        #logger.debug(f"Deleting old backup directory: {month_dir} (dir_date={dir_date})")
                         shutil.rmtree(month_dir)
                     else:
                         # Check individual backup files in the month directory
@@ -457,7 +482,7 @@ def cleanup_old_files():
                                 timestamp_str = os.path.basename(backup_file).split('-')[-1]
                                 file_date = datetime.strptime(timestamp_str, '%Y.%m.%d.%H.%M.%S')
                                 if file_date < cutoff_date:
-                                    logger.debug(f"Deleting old backup file: {backup_file} (file_date={file_date})")
+                                    #logger.debug(f"Deleting old backup file: {backup_file} (file_date={file_date})")
                                     os.remove(backup_file)
                             except (ValueError, OSError) as e:
                                 logger.error(f"Failed to delete old backup file {backup_file}: {e}")
@@ -466,21 +491,89 @@ def cleanup_old_files():
 
 def get_config(key):
     """Get a configuration value by key."""
-    return CONFIG.get(key)
+    value = CONFIG.get(key)
+    if value is None:
+        logger.warning(f"CONFIG key not found: {key}")
+    return value
 
-def init_config():
-    """Initialize configuration and ensure directories exist."""
-    for dir_path in [CONFIG['DATA_DIR'], CONFIG['LOG_DIR'], CONFIG['BANK_DIR']]:
-        os.makedirs(dir_path, exist_ok=True)
+def init_config(source, gc_env=None):
+    """Initialize configuration - FORCE .env reload every time"""
+    # CRITICAL: Force reload .env from disk EVERY STARTUP
+    from dotenv import load_dotenv
+    env_path = r'C:\HA-Project\.env'
+    load_dotenv(dotenv_path=env_path, override=True, verbose=True)
+    print("---First line in log after restart---")
+    print(f"RELOADED .env: APP_ENV={os.getenv('APP_ENV')}")
+    
+    CONFIG.clear
+    CONFIG.update({
+        'APP_ENV': os.getenv('APP_ENV', 'test'),
+        'APP_DEBUG': os.getenv('APP_DEBUG', 'True').lower() == 'true',
+        'APP_LOG_LEVEL': os.getenv('APP_LOG_LEVEL', 'debug').lower(),
+        'PROG_DIR': os.getenv('PROG_DIR', 'C:/HA-Project/'),
+        'DATA_DIR': os.getenv('DATA_DIR', 'C:/HA-Data/'),
+        'TEST_DIR': os.getenv('TEST_DIR', 'TEST/'),
+        'LIVE_DIR': os.getenv('LIVE_DIR', 'LIVE/'),
+        'DB_DIR': os.getenv('DB_DIR', 'DATABASE/'),
+        'LOG_DIR': os.getenv('LOG_DIR', 'LOGS/'),
+        'ILOG_DIR': os.getenv('ILOG_DIR', 'LOGS/IMPORT/'),
+        'FLOG_DIR': os.getenv('FLOG_DIR', 'LOGS/FETCH/'),
+        'BANK_DIR': os.getenv('BANK_DIR', 'BANK_TRANSACTIONS/'),
+        'BACKUP_DIR': os.getenv('BACKUP_DIR', 'BACKUP/'),
+        'DB_LIVE': os.getenv('DB_LIVE', 'HAdata.db'),
+        'DB_TEST': os.getenv('DB_TEST', 'HAtest.db'),
+        'API_BASE_URL': os.getenv('API_BASE_URL', 'https://bankaccountdata.gocardless.com/api/v2'),
+        'VENV_DIR': os.getenv('VENV_DIR', 'C:/HA-Project/.venv'),
+        # Below values are defaults - actuals are loaded from Settings table in db, but prob the same values
+        'EXPIRY_WARNING_DAYS': 10,
+        'LOG_DAYS_TO_KEEP': 10,
+        'TOKEN_MARGIN': 60,
+        'REQUISITION_VALIDITY_DAYS': 90,
+        'IMPORT_DAYS_TO_KEEP': 30
+    })
+    
+    # Check if called from main.py or fetch_bank_trans.py
+    if source == "GC":
+        print(f"Command-line override: forcing APP_ENV = {gc_env}")
+        # Override both environment and CONFIG
+        os.environ['APP_ENV'] = gc_env
+        CONFIG['APP_ENV'] = gc_env
+    
+    # Compute paths based on APP_ENV
+    data_dir = get_config('DATA_DIR')
+    if get_config('APP_ENV') == 'test':
+        env_dir = get_config('TEST_DIR')
+        db_filename = get_config('DB_TEST')
+    else:
+        env_dir = get_config('LIVE_DIR')
+        db_filename = get_config('DB_LIVE')
+
+    # Build paths
+    base_path = os.path.join(data_dir, env_dir)
+    CONFIG['DB_PATH'] = os.path.join(base_path, get_config('DB_DIR'), db_filename)
+    CONFIG['LOG_PATH'] = os.path.join(base_path, get_config('LOG_DIR'))
+    CONFIG['ILOG_PATH'] = os.path.join(base_path, get_config('ILOG_DIR'))
+    CONFIG['FLOG_PATH'] = os.path.join(base_path, get_config('FLOG_DIR'))
+    CONFIG['BANK_PATH'] = os.path.join(base_path, get_config('BANK_DIR'))
+    CONFIG['BACKUP_PATH'] = os.path.join(base_path, get_config('DB_DIR'), get_config('BACKUP_DIR'))
+
+    # Ensure directories exist
+    for dir_path in [CONFIG['DB_PATH'], CONFIG['LOG_PATH'], CONFIG['ILOG_PATH'], CONFIG['BANK_PATH']]:
+        os.makedirs(os.path.dirname(dir_path) if dir_path.endswith('.db') else dir_path, exist_ok=True)
+
+    # Set up logging
     setup_logging()
     
-    # Set up logging
     logger = logging.getLogger('HA.init')
-    logger.debug("++++++++++++++++++++++++ START OF NEW SESSION ++++++++++++++++++++++++")
-    logger.debug(f"LOG_DIR: {CONFIG['LOG_DIR']}")
+    #logger.debug("++++++++++++++++++++++++ START OF NEW SESSION ++++++++++++++++++++++++")
+    #logger.debug(f"DB_PATH: {CONFIG['DB_PATH']}")
+    #logger.debug(f"LOG_PATH: {CONFIG['LOG_PATH']}")
+    #logger.debug(f"ILOG_PATH: {CONFIG['ILOG_PATH']}")
+    #logger.debug(f"FLOG_PATH: {CONFIG['FLOG_PATH']}")
+    #logger.debug(f"BANK_PATH: {CONFIG['BANK_PATH']}")
     
     load_db_settings()
-    logger.debug("Configuration initialized")
+    #logger.debug("Configuration initialized")
     
 def update_master_bg(colour):
     global master_bg

@@ -3,10 +3,10 @@ import os
 import sys
 import shutil
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 from calendar import monthrange
 import logging
-from config import CONFIG, get_config
+from config import get_config
 
 # Set up logging
 logger = logging.getLogger('HA.db')
@@ -26,17 +26,12 @@ def open_db():
         if not os.path.exists(db_path):
             shutil.copy(db_source, db_path)
     else:
-        # Running as script
-        # Get correct DB
-        if CONFIG['APP_ENV'] == 'test':
-            db_path = get_config('DB_PATH_TEST')
-        else:
-            db_path = get_config('DB_PATH')
-    
+        # Running as script - init_config() has already set 'DB_PATH' to correct value
+        db_path = get_config('DB_PATH')
     try:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
-        logger.debug(f"Database open: {db_path}")
+        #logger.debug(f"Database open: {db_path}")
         return conn, cursor, db_path
     except sqlite3.Error as e:
         raise Exception(f"Failed to open database: {e}")    
@@ -44,7 +39,7 @@ def open_db():
 def close_db(conn):
     if conn:
         conn.close()
-    logger.debug("Database closed:")
+    #logger.debug("Database closed:")
 
 # Transaction Table
 def insert_transaction(cursor, conn, tr_type, day, month, year, status, flag, amount, desc, acc_from, acc_to, cat_pid=None, subcat_cid=None, reg_id=0):
@@ -55,21 +50,25 @@ def insert_transaction(cursor, conn, tr_type, day, month, year, status, flag, am
     return cursor.lastrowid
 
 def update_transaction(cursor, conn, tr_id, tr_type, day, month, year, status, flag, amount, desc, acc_from, acc_to, cat_pid=None, subcat_cid=None):
-    cursor.execute("UPDATE Trans SET Tr_Type=?, Tr_Reg_ID=?, Tr_DOW=?, Tr_Day=?, Tr_Month=?, Tr_Year=?, Tr_Stat=?, Tr_Query_Flag=?, Tr_Amount=?, Tr_Desc=?, Tr_Acc_From=?, Tr_Acc_To=?, Tr_Exp_ID=?, Tr_ExpSub_ID=? "
+    cursor.execute("UPDATE Trans SET Tr_Type=?, Tr_DOW=?, Tr_Day=?, Tr_Month=?, Tr_Year=?, Tr_Stat=?, Tr_Query_Flag=?, Tr_Amount=?, Tr_Desc=?, Tr_Acc_From=?, Tr_Acc_To=?, Tr_Exp_ID=?, Tr_ExpSub_ID=? "
                 "WHERE Tr_ID=?",
-                (tr_type, 0, 0, day, month, year, status, flag, amount, desc, acc_from, acc_to, cat_pid, subcat_cid, tr_id))
+                (tr_type, 0, day, month, year, status, flag, amount, desc, acc_from, acc_to, cat_pid, subcat_cid, tr_id))
     conn.commit()
 
 def delete_transaction(cursor, conn, tr_id):
     cursor.execute("DELETE FROM Trans WHERE Tr_ID=?", (tr_id,))
+    cursor.execute("DELETE FROM Trans_Rules WHERE Tr_ID = ?", (tr_id,))
     conn.commit()
 
 def fetch_month_rows(cursor, month, year, accounts, account_data):
+    #logger.debug(f"at fetch_month_rows(), month={month}, year={year}, account_data={account_data}")
     # Get FF checkbox setting
     cursor.execute("SELECT Lup_seq FROM Lookups WHERE Lup_LupT_ID = 8")
     ff_rows = cursor.fetchone()
-    ff_flag = ff_rows[0]
-
+    ff_flag = ff_rows[0]    # ff_flag = 1 means prefix rows with Tr_FF_Journal_ID value
+    current = datetime.now()
+    today_inserted = False
+    # Fetch all transactions for given month/year
     cursor.execute("SELECT Tr_ID, Tr_Type, Tr_Reg_ID, Tr_Day, Tr_Month, Tr_Year, Tr_Stat, Tr_Query_Flag, Tr_Amount, "
                 "Tr_Desc, Tr_Exp_ID, Tr_ExpSub_ID, Tr_Acc_From, Tr_Acc_To, Tr_FF_Journal_ID "
                 "FROM Trans WHERE Tr_Year = ? AND Tr_Month = ? ORDER BY Tr_Day ASC, Tr_Stat DESC", (year, month))
@@ -101,12 +100,18 @@ def fetch_month_rows(cursor, month, year, accounts, account_data):
 
             date_obj = datetime(tr_year, tr_month, tr_day)
             day_name = dow_map[date_obj.weekday()]
-
+            
             # Daily Totals row
             if current_day is not None and current_day != tr_day:   
                 total_values = ["", "", "", "", "", "End of Day Balance"] + ["" if bal == 0.0 else "{:,.2f}".format(bal) for bal in daily_balances]
                 rows.append({"values": tuple(total_values), "status": "Total", "flag": 0, "type": "Total"})
 
+            # Today Marker row
+            if tr_day >= current.day and not today_inserted and current.month == month and current.year == year:
+                today_values = ["", current.day, "", "", "", "                    ----- T O D A Y -----", "", "", "T O D A Y", "", "", "T O D A Y", "", "", "T O D A Y", "", "", "T O D A Y"]
+                rows.append({"values": tuple(today_values), "status": "TodayMarker", "flag": 0, "type": ""})
+                today_inserted = True
+                
             current_day = tr_day
 
             # If Show FF ID flag set then prefix FF ID to description - for crosschecking transaction with FireFly
@@ -115,9 +120,9 @@ def fetch_month_rows(cursor, month, year, accounts, account_data):
                     x = str(tr_ff_id)
                 else:
                     x = " "
-                tr_ff_desc = f"({x}) {tr_desc}"
+                tr_ff_desc = f" ({x}) {tr_desc}"
             else:
-                tr_ff_desc = tr_desc
+                tr_ff_desc = f" {tr_desc}"
                 
             # If has a Regular Transaction ID exists
             if tr_reg_id > 0:
@@ -129,7 +134,7 @@ def fetch_month_rows(cursor, month, year, accounts, account_data):
             amount = float(tr_amount) if tr_amount else 0.0
             if trans_type == "Income":
                 if tr_exp_id == 99:
-                    values[3] = "{:,.2f} ??".format(amount)
+                    values[3] = "{:,.2f} ?".format(amount)
                 else:
                     values[3] = "{:,.2f}".format(amount)
                 if tr_acc_to and 0 <= tr_acc_to - 1 < len(accounts):
@@ -137,7 +142,7 @@ def fetch_month_rows(cursor, month, year, accounts, account_data):
                     daily_balances[tr_acc_to - 1] += amount
             elif trans_type == "Expense":
                 if tr_exp_id == 99:
-                    values[4] = "{:,.2f} ??".format(-amount)
+                    values[4] = "{:,.2f} ?".format(-amount)
                 else:
                     values[4] = "{:,.2f}".format(-amount)
                 if tr_acc_from and 0 <= tr_acc_from - 1 < len(accounts):
@@ -168,8 +173,8 @@ def fetch_actuals(cursor, pid, cid, month, year):
     return result[0] or 0.0
 
 def fetch_account_transactions(cursor, acc_id, year, account_data, ff_flag, acc_limit):
-    """Fetch transactions for a single account in the given year, ordered by month and day, with daily totals."""
-    logger.debug(f"Fetching transactions for Acc_ID={acc_id}, Year={year}, FF_Flag={ff_flag}, Acc_Credit_Limit={acc_limit}")
+    """Fetch transactions for a single account in the given year, ordered by month and day, with monthly totals."""
+    #logger.debug(f"Fetching transactions for Acc_ID={acc_id}, Year={year}, FF_Flag={ff_flag}, Acc_Credit_Limit={acc_limit}")
     try:
         cursor.execute("""
             SELECT Tr_ID, Tr_Type, Tr_Reg_ID, Tr_Day, Tr_Month, Tr_Year, Tr_Stat, Tr_Query_Flag, Tr_Amount, 
@@ -184,6 +189,11 @@ def fetch_account_transactions(cursor, acc_id, year, account_data, ff_flag, acc_
         current_day = None
         current_month = None
         dow_map = {0: "Mon", 1: "Tue", 2: "Wed", 3: "Thu", 4: "Fri", 5: "Sat", 6: "Sun"}
+        month_map = {
+            1: "January", 2: "February", 3: "March", 4: "April",
+            5: "May", 6: "June", 7: "July", 8: "August",
+            9: "September", 10: "October", 11: "November", 12: "December"
+            }
         
         if not db_rows:
             # Add empty rows if no transactions
@@ -206,9 +216,9 @@ def fetch_account_transactions(cursor, acc_id, year, account_data, ff_flag, acc_
                 day_name = dow_map[date_obj.weekday()]
                 
                 # Add total row before new day
-                if current_day is not None and (current_day != tr_day or current_month != tr_month):
+                if current_day is not None and (current_month != tr_month):
                     rows.append({
-                        "day": "", "date": "", "desc": "End of Day Balance", "income": "", "expense": "", "balance": balance,
+                        "day": "", "date": "", "desc": f"End of Month Balance - {month_map[current_month]}", "income": "", "expense": "", "balance": balance,
                         "status": "Total", "flag": 0, "type": "Total", "month": current_month, "num_day": 0, "is_weekend": 0, "overlimit": balance < acc_limit
                     })
                 
@@ -238,7 +248,7 @@ def fetch_account_transactions(cursor, acc_id, year, account_data, ff_flag, acc_
                 
                 rows.append({
                     "tr_id": tr_id, "day": day_name, "date": f"{tr_day:02d}/{tr_month:02d}/{tr_year}", 
-                    "desc": tr_desc, "income": income, "expense": expense, "balance": "",
+                    "desc": tr_desc, "income": income, "expense": expense, "balance": balance,
                     "status": status, "flag": flag, "type": trans_type, "month": tr_month, "num_day": tr_day, 
                     "is_weekend": is_weekend, "overlimit": False, "exp_id": tr_exp_id
                 })
@@ -246,22 +256,24 @@ def fetch_account_transactions(cursor, acc_id, year, account_data, ff_flag, acc_
             # Add final total row
             if current_day is not None:
                 rows.append({
-                    "day": "", "date": "", "desc": "End of Day Balance", "income": "", "expense": "", "balance": balance,
+                    "day": "", "date": "", "desc": f"End of Month Balance - {month_map[current_month]}", "income": "", "expense": "", "balance": balance,
                     "status": "Total", "flag": 0, "type": "Total", "month": current_month, "num_day": 0, "is_weekend": 0, "overlimit": balance < acc_limit
                 })
+            # Add final blank row
+                rows.append({
+                    "day": "", "date": "", "desc": "", "income": "", "expense": "", "balance": "",
+                    "status": "Total", "flag": 0, "type": "Total", "month": current_month, "num_day": 0, "is_weekend": 0, "overlimit": 0
+                })
         
-        logger.debug(f"Fetched {len(rows)} rows (including totals) for Acc_ID={acc_id}")
+        #logger.debug(f"Fetched {len(rows)} rows (including totals) for Acc_ID={acc_id}")
         return rows
     except Exception as e:
         logger.error(f"Error fetching transactions for Acc_ID={acc_id}: {e}\n{traceback.format_exc()}")
         return []
 
-
-
-
 def fetch_transaction(cursor, tr_id):
     """Fetch a single transaction record by Tr_ID."""
-    logger.debug(f"Fetching transaction for Tr_ID={tr_id}")
+    #logger.debug(f"Fetching transaction for Tr_ID={tr_id}")
     try:
         cursor.execute("""
             SELECT Tr_ID, Tr_Type, Tr_Reg_ID, Tr_Day, Tr_Month, Tr_Year, Tr_Stat, Tr_Query_Flag, Tr_Amount, 
@@ -297,8 +309,6 @@ def fetch_transaction(cursor, tr_id):
         logger.error(f"Error fetching transaction for Tr_ID={tr_id}: {e}\n{traceback.format_exc()}")
         return None
 
-
-
 # Lookups
 def fetch_notes(cursor):
     cursor.execute("SELECT Lup_Desc FROM Lookups WHERE Lup_LupT_ID = 7 ORDER BY Lup_ID")  # Assuming Lup_ID for order
@@ -330,7 +340,7 @@ def update_lookup_color(cursor, conn, lup_seq, lup_type_id, color):
         if result:
             lup_id = result[0]
             cursor.execute("UPDATE Lookups SET Lup_Desc = ? WHERE Lup_ID = ? AND Lup_LupT_ID = ?", (color, lup_id, lup_type_id))
-            logger.debug(f"Updated color for Lup_ID={lup_id}, Lup_LupT_ID={lup_type_id}, Lup_Seq={lup_seq} to {color}")
+            #logger.debug(f"Updated color for Lup_ID={lup_id}, Lup_LupT_ID={lup_type_id}, Lup_Seq={lup_seq} to {color}")
         else:
             logger.warning(f"No record found to update for Lup_LupT_ID={lup_type_id}, Lup_Seq={lup_seq}")
         conn.commit()
@@ -385,6 +395,16 @@ def fetch_subcategory_name(cursor, cat_id, subcat_id, year):
     row = cursor.fetchone()
     return row[0] if row else ""
 
+def copy_categories_from_previous_year(cursor, conn, target_year):
+    logger.debug("at copy_categories_from_previous_year()")
+    prev_year = int(target_year) - 1
+    cursor.execute("""
+        INSERT INTO IE_Cata (IE_PID, IE_CID, IE_Year, IE_Desc, IE_Cat_ID, IE_Seq)
+        SELECT IE_PID, IE_CID, ?, IE_Desc, IE_Cat_ID, IE_Seq
+        FROM IE_Cata WHERE IE_Year = ?
+    """, (target_year, prev_year))
+    conn.commit()
+    return cursor.rowcount
 
 # Account Table
 def fetch_account_full_names(cursor, year):
@@ -448,7 +468,8 @@ def update_account(cursor, conn, acc_id, year, acc_type, name, short_name, last4
     conn.commit()
 
 def copy_accounts_from_previous_year(cursor, conn, target_year):
-    prev_year = target_year - 1
+    logger.debug("at copy_accounts_from_previous_year()")
+    prev_year = int(target_year) - 1
     cursor.execute("""
         INSERT INTO Account (Acc_ID, Acc_Year, Acc_Type, Acc_Name, Acc_Short_Name, Acc_Last4, Acc_Credit_Limit, 
                             Acc_Colour, Acc_Open, Acc_Statement_Date, Acc_Prev_Month)
@@ -487,7 +508,7 @@ def bring_forward_opening_balances(cursor, conn, current_year):
     return len(prior_accounts)  # Number of accounts updated
 
 def update_account_month_transaction_total(cursor, conn, month, year, accounts):
-
+    #logger.debug("update_account_month_transaction_total() called")
     month_map = {
         1: "Acc_Jan", 2: "Acc_Feb", 3: "Acc_Mar", 4: "Acc_Apr",
         5: "Acc_May", 6: "Acc_Jun", 7: "Acc_Jul", 8: "Acc_Aug",
@@ -618,35 +639,52 @@ def fetch_transaction_sums(cursor, month, year, accounts):
     return completed, processing, forecast, tc_complete, tc_processing, tc_forecast, tc_total
 
 def fetch_statement_balances(cursor, month, year, accounts):
-    cursor.execute("SELECT Acc_ID, Acc_Short_Name, Acc_Open, Acc_Statement_Date, Acc_Prev_Month, "
-                "Acc_Jan, Acc_Feb, Acc_Mar, Acc_Apr, Acc_May, Acc_Jun, "
-                "Acc_Jul, Acc_Aug, Acc_Sep, Acc_Oct, Acc_Nov, Acc_Dec "
-                "FROM Account WHERE Acc_Year = ? ORDER BY Acc_ID", (year,))
+    cursor.execute("""
+        SELECT Acc_ID, Acc_Short_Name, Acc_Open, Acc_Statement_Date, Acc_Prev_Month, 
+        Acc_Jan, Acc_Feb, Acc_Mar, Acc_Apr, Acc_May, Acc_Jun, Acc_Jul, Acc_Aug, Acc_Sep, Acc_Oct, Acc_Nov, Acc_Dec 
+        FROM Account WHERE Acc_Year = ? ORDER BY Acc_ID
+    """, (year,))
     account_data = cursor.fetchall()
     acc_map = {row[1]: row[0] for row in account_data}
     
-    target_year = year if month > 1 else year - 1
-    target_month = month - 1 if month > 1 else 12
-    days_in_prev_month = monthrange(target_year, target_month)[1]
-    target_year = year
-    target_month = month
-    days_in_month = monthrange(target_year, target_month)[1]
+    # to be used if this is January and previous month is needed
+    days_in_prev_month = monthrange(year-1, 12)[1]
+    # Otherwise use this
+    days_in_month = monthrange(year, month)[1]
     
     balances = [None] * len(accounts)
     
-    for idx, (acc_id, acc_name, acc_open, stmt_date, prev_month, *monthly) in enumerate(account_data):
+    for idx, row in enumerate(account_data):
+        acc_id, acc_sname, acc_open, stmt_date, prev_month_flag, *monthly = row
+        
         if not stmt_date or stmt_date == 0:
             continue
         
-        calc_month = month if prev_month == 0 else (month - 1 if month > 1 else 12)
-        calc_year = year if prev_month == 0 else (year - 1 if month == 1 else year)
-        max_days = days_in_month if prev_month == 0 else days_in_prev_month
+        calc_month = month if prev_month_flag == 0 else (month - 1 if month > 1 else 12)
+        calc_year = year if prev_month_flag == 0 else (year - 1 if month == 1 else year)
+        max_days = days_in_month if prev_month_flag == 0 else days_in_prev_month
         stmt_day = min(stmt_date, max_days)
         
-        som = float(acc_open or 0.0)
-        for m in range(calc_month - 1):
-            som += float(monthly[m] or 0.0)
+        # If calculating for previous year, fetch prev year's account data
+        if calc_year < year:
+            cursor.execute("""
+                SELECT Acc_Open, Acc_Jan, Acc_Feb, Acc_Mar, Acc_Apr, Acc_May, Acc_Jun, Acc_Jul, Acc_Aug, Acc_Sep, Acc_Oct, Acc_Nov, Acc_Dec 
+                FROM Account WHERE Acc_Year = ? AND Acc_ID = ?
+            """, (calc_year, acc_id))
+            prev_row = cursor.fetchone()
+            if prev_row:
+                acc_open, *monthly = prev_row
+            else:
+                # No previous year data - log error or set to 0
+                balances[idx] = 0.0
+                continue
         
+        som = float(acc_open or 0.0)
+        # Always add up to calc_month - 1 (now using correct year's data)
+        if calc_month > 1:
+            for m in range(calc_month - 1):
+                som += float(monthly[m] or 0.0)
+            
         cursor.execute("""
             SELECT Tr_Acc_From, Tr_Acc_To, Tr_Stat, Tr_Amount
             FROM Trans
@@ -673,7 +711,6 @@ def fetch_statement_balances(cursor, month, year, accounts):
         balances[idx] = balance
     
     return balances
-
 
 # Regular Transactions Table
 def fetch_regular_for_year(cursor, year):
@@ -725,13 +762,13 @@ def fetch_rule_group_names(cursor):
 
 # Triggers Table
 def delete_trigger(cursor, conn, trigger_id):
-    logger.debug(f"Deleting trigger ID: {trigger_id}")
+    #logger.debug(f"Deleting trigger ID: {trigger_id}")
     cursor.execute("DELETE FROM Triggers WHERE Trigger_ID = ?", (trigger_id,))
     conn.commit()
 
 # Actions Table
 def delete_action(cursor, conn, action_id):
-    logger.debug(f"Deleting action ID: {action_id}")
+    #logger.debug(f"Deleting action ID: {action_id}")
     cursor.execute("DELETE FROM Actions WHERE Action_ID = ?", (action_id,))
     conn.commit()
 

@@ -11,7 +11,7 @@ import time
 from db import (fetch_trigger_option, fetch_action_option, create_rule_group, fetch_account_full_name, fetch_category_name, fetch_subcategory_name)
 from ui_utils import (VerticalScrolledFrame, resource_path, open_form_with_position, close_form_with_position, sc, Tooltip)
 from gui_maint_rule_edit import edit_rule_form
-from config import COLORS
+from config import COLORS, ICON_CACHE
 import config
 
 # Set up logging
@@ -25,7 +25,7 @@ except Exception as e:
     logger.warning(f"Failed to set DPI awareness: {e}")
     
 # Global image cache to reuse PhotoImage across form instances
-_image_cache = {}
+#_image_cache = {}
     
 ###  Rules Maintenance Form and Rules Engine functions  ###
 def create_rules_form(parent, conn, cursor):                            # Win_ID = 22
@@ -65,35 +65,22 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
     }
     form.image_refs = []
 
-    # Use cached bitmap images or create new ones
-    global _image_cache
-    icon_files = [
-        "2_edit-48.png",
-        "3_trash-48.png",
-        "4_see_match-48.png",
-        "5_apply_rule-48.png",
-        "6_duplicate-48.png",
-        "7_up-24.png",
-        "8_down-24.png"
-    ]
-    for icon in icon_files:
-        if icon not in _image_cache:
-            img = tk.PhotoImage(file=resource_path(f"icons/{icon}"))
-            img = img.zoom(sc(1))  # Apply scaling for icons
-            _image_cache[icon] = img
-            logger.debug(f"Created new PhotoImage for {icon}")
-        form.image_refs.append(_image_cache[icon])
-        logger.debug(f"Reusing cached PhotoImage for {icon}")
-
-    # Assign cached images
-    edit_img = _image_cache["2_edit-48.png"]
-    delete_img = _image_cache["3_trash-48.png"]
-    see_match_img = _image_cache["4_see_match-48.png"]
-    apply_rule_img = _image_cache["5_apply_rule-48.png"]
-    duplicate_img = _image_cache["6_duplicate-48.png"]
-    up_img = _image_cache["7_up-24.png"]
-    down_img = _image_cache["8_down-24.png"]
-    
+    # Use cached bitmap images
+    edit_img = ICON_CACHE.get("edit")
+    form.image_refs.append(edit_img)
+    delete_img = ICON_CACHE.get("trash")
+    form.image_refs.append(delete_img)
+    see_match_img = ICON_CACHE.get("see_match")
+    form.image_refs.append(see_match_img)
+    apply_rule_img = ICON_CACHE.get("apply_rule")
+    form.image_refs.append(apply_rule_img)
+    duplicate_img = ICON_CACHE.get("duplicate")
+    form.image_refs.append(duplicate_img)
+    up_img = ICON_CACHE.get("up_s")
+    form.image_refs.append(up_img)
+    down_img = ICON_CACHE.get("down_s")
+    form.image_refs.append(down_img)
+        
     top_padding = sc(10)  # Reduced to account for header
     group_frame_padding = sc(95)
     group_frame_collapsed = sc(50)
@@ -142,9 +129,10 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
     
     scrolled_frame_bottom_padding = sc(20)
     
-    tree_colw_300 = sc(300)
-    tree_colw_65 = sc(65)
-    tree_colw_381 = sc(381)
+    tree_colw_1 = sc(40)
+    tree_colw_2 = sc(300)
+    tree_colw_3 = sc(65)
+    tree_colw_4 = sc(361)
     
     pop_button_width = 48       # scaled inside function
     pop_button_height = 48      # scaled inside function
@@ -278,8 +266,8 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
             #logger.debug("No item identified for click")
             return
         column = tree.identify_column(event.x)
-        #logger.debug(f"Click on item {item}, column {column}")
-        if column not in ("#5", "#6"):  # Triggers, Actions
+        logger.debug(f"Click on item {item}, column {column}")
+        if column not in ("#6", "#7"):  # Triggers, Actions
             return
         tags = tree.item(item, "tags")
         #logger.debug(f"Item tags: {tags}")
@@ -294,8 +282,8 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
         values = tree.item(item, "values")
         triggers = rule_data[rule_id]["triggers"]
         actions = rule_data[rule_id]["actions"]
-        current_triggers = values[4]
-        current_actions = values[5]
+        current_triggers = values[5]
+        current_actions = values[6]
         original_index = tree.index(item)
         trigger_expanded = current_triggers != "   Show Triggers"
         action_expanded = current_actions != "   Show Actions"
@@ -325,8 +313,8 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
                 logger.warning(f"No description found for TrigO_ID {trigo_id}")
                 trigger_lines.append(f'   Unknown Trigger "{trig_value}"')
 
-        # Modify trigger_lines based on Rule_Trigger_Mode (column 3)
-        rule_trigger_mode = values[2]  # Get Rule_Trigger_Mode from column 3
+        # Modify trigger_lines based on Rule_Trigger_Mode (column 4)
+        rule_trigger_mode = values[3]  # Get Rule_Trigger_Mode from column 4
         if rule_trigger_mode == "Any":
             trigger_lines = [f"      {trigger_lines[0]}"] + [f"OR {line}" for line in trigger_lines[1:]]
         elif rule_trigger_mode == "ALL":
@@ -363,14 +351,14 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
                 action_lines.append(f'   Unknown Action "{act_value or ""}"')
         
         # Toggle state
-        if column == "#5":
+        if column == "#6":
             trigger_expanded = not trigger_expanded
             if trigger_expanded:
                 tree.column("Triggers", anchor='nw')
             else:
                 tree.column("Triggers", anchor='w')
                 
-        elif column == "#6":
+        elif column == "#7":
             action_expanded = not action_expanded
             if action_expanded:
                 tree.column("Actions", anchor='nw')
@@ -380,7 +368,7 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
         # Prepare rule row
         cell_triggers = "\n".join(trigger_lines[:3]) if trigger_expanded and trigger_lines else "   Show Triggers"
         cell_actions = "\n".join(action_lines[:3]) if action_expanded and action_lines else "   Show Actions"
-        new_values = (values[0], values[1], values[2], values[3], cell_triggers, cell_actions)
+        new_values = (values[0], values[1], values[2], values[3], values[4], cell_triggers, cell_actions)
         # Store existing child row values
         existing_children = tree.get_children(item)
         #logger.debug(f"Existing children before delete: {existing_children}")
@@ -402,19 +390,19 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
             action_text = "\n".join(action_chunks[i]) if i < len(action_chunks) else ""
             # Use existing values if available and not toggling off
             if i < len(child_values):
-                existing_trigger = child_values.get(i, ("", "", "", "", "", ""))[4]
-                existing_action = child_values.get(i, ("", "", "", "", "", ""))[5]
+                existing_trigger = child_values.get(i, ("", "", "", "", "", "", ""))[5]
+                existing_action = child_values.get(i, ("", "", "", "", "", "", ""))[6]
                 if trigger_expanded and existing_trigger and not trigger_text:
                     trigger_text = existing_trigger
                 if action_expanded and existing_action and not action_text:
                     action_text = existing_action
             if i < len(existing_children) and tree.exists(existing_children[i]):
                 # Update existing child row
-                tree.item(existing_children[i], values=("", "", "", "", trigger_text, action_text))
+                tree.item(existing_children[i], values=("", "", "", "", "", trigger_text, action_text))
                 extra_rows.append(existing_children[i])
             else:
                 # Create new child row
-                extra_rows.append(tree.insert(new_iid, "end", values=("", "", "", "", trigger_text, action_text), tags=("child",)))
+                extra_rows.append(tree.insert(new_iid, "end", values=("", "", "", "", "", trigger_text, action_text), tags=("child",)))
             #logger.debug(f"Child row {i+1}: trigger_text='{trigger_text}', action_text='{action_text}', row_id={extra_rows[-1]}")
         # Remove extra child rows
         for child in existing_children[max_chunks:]:
@@ -512,7 +500,7 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
                 tree_height = len(rules) * icon_size + tree_height_padding
                 group_heights[group_id] = tree_height + group_frame_padding
 
-                tree = ttk.Treeview(group_frame, columns=("Rule", "Active", "Mode", "Stop", "Triggers", "Actions"), show="headings", style="Rules.Treeview")
+                tree = ttk.Treeview(group_frame, columns=("ID", "Rule", "Active", "Mode", "Stop", "Triggers", "Actions"), show="headings", style="Rules.Treeview")
                 
                 # Setup Rule Group buttons
                 expand_l_btn = tk.Button(group_frame, text="+", width=2, height=1, font=(config.ha_normal), command=lambda gid=group_id, gf=group_frame, t=tree, rs=rules: 
@@ -529,18 +517,20 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
                     show_popup_palette(gid, gf, mb, conn, cursor, form, scrolled_frame))
                 menu_btn.place(x=menu_button_x, y=rg_button_y, width=rg_button_size, height=rg_button_size)
 
+                tree.heading("ID", text="Num")
                 tree.heading("Rule", text="Rule Name")
                 tree.heading("Active", text="Active")
                 tree.heading("Mode", text="All/Any")
                 tree.heading("Stop", text="Stop")
                 tree.heading("Triggers", text="Rule triggers when")
                 tree.heading("Actions", text="Rule will")
-                tree.column("Rule", width=tree_colw_300, minwidth=tree_colw_300, stretch=0)
-                tree.column("Active", width=tree_colw_65, minwidth=tree_colw_65, stretch=0, anchor='center')
-                tree.column("Mode", width=tree_colw_65, minwidth=tree_colw_65, stretch=0, anchor='center')
-                tree.column("Stop", width=tree_colw_65, minwidth=tree_colw_65, stretch=0, anchor='center')
-                tree.column("Triggers", width=tree_colw_381, minwidth=tree_colw_381, stretch=0, anchor='w')
-                tree.column("Actions", width=tree_colw_381, minwidth=tree_colw_381, stretch=0, anchor='w')
+                tree.column("ID", width=tree_colw_1, minwidth=tree_colw_1, stretch=0)
+                tree.column("Rule", width=tree_colw_2, minwidth=tree_colw_2, stretch=0)
+                tree.column("Active", width=tree_colw_3, minwidth=tree_colw_3, stretch=0, anchor='center')
+                tree.column("Mode", width=tree_colw_3, minwidth=tree_colw_3, stretch=0, anchor='center')
+                tree.column("Stop", width=tree_colw_3, minwidth=tree_colw_3, stretch=0, anchor='center')
+                tree.column("Triggers", width=tree_colw_4, minwidth=tree_colw_4, stretch=0, anchor='w')
+                tree.column("Actions", width=tree_colw_4, minwidth=tree_colw_4, stretch=0, anchor='w')
 
                 tree.bind("<Button-1>", lambda e, t=tree, gid=group_id: on_tree_click(e, t, tree_height, scrolled_frame, form.ui_elements['group_frames'], form.ui_elements['close_button'], form.ui_elements['global_up_btns'], form.ui_elements['global_down_btns'], group_rules[gid], gid))
                 tree.bind("<<TreeviewSelect>>", lambda e: logger.debug(f"Selected rule: {tree.selection()}"))
@@ -572,7 +562,7 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
                                             command=lambda r=rule_id, a=i, g=group_id: button_action(r, a, g, conn, cursor, form))
                             btn.place(x=i * sc(53), y=0)
 
-                    tree.insert("", "end", iid=f"I{rule_id}", values=(rule_name, "Active" if rule_active else "Inactive", rule_trigger_mode, "Proceed" if rule_proceed else "Stop", 
+                    tree.insert("", "end", iid=f"I{rule_id}", values=(rule_id, rule_name, "Active" if rule_active else "Inactive", rule_trigger_mode, "Proceed" if rule_proceed else "Stop", 
                                                                     "   Show Triggers", "   Show Actions"), tags=("rule", str(rule_id)))
                     tree.item(f"I{rule_id}", tags=("rule", str(rule_id)))
                     button_y += icon_size
@@ -615,7 +605,7 @@ def create_rules_form(parent, conn, cursor):                            # Win_ID
                         
                         # Add new rule to Treeview
                         new_iid = f"I{new_rule_id}"
-                        tree.insert("", "end", iid=new_iid, values=(new_name, "Active", "ALL", "Proceed", "   Show Triggers", "   Show Actions"), tags=("rule", str(new_rule_id)))
+                        tree.insert("", "end", iid=new_iid, values=(new_rule_id, new_name, "Active", "ALL", "Proceed", "   Show Triggers", "   Show Actions"), tags=("rule", str(new_rule_id)))
                         
                         # Calculate button_y using Treeview bbox for precise alignment
                         tree.update_idletasks()

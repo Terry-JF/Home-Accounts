@@ -9,14 +9,14 @@ import re
 from db import (fetch_rule_group_names, fetch_trigger_options, fetch_action_options, fetch_account_c_names,
                 fetch_account_names, fetch_subcategories, fetch_all_categories, fetch_trigger_option, fetch_action_option)
 from ui_utils import (VerticalScrolledFrame, resource_path, open_form_with_position, close_form_with_position, open_calendar, center_window, timed_message, sc)
-from config import COLORS
+from config import COLORS, ICON_CACHE
 import config
 
 # Set up logging
 logger = logging.getLogger('HA.maint_rule_edit')
 
 # Global image cache to reuse PhotoImage across form instances
-_delete_img_cache = None
+#_delete_img_cache = None       # moved to home form so can be used more widely
 
 def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame, root, is_new_rule=False):                  # Win_ID = 24
     # Create the Edit Rule form as a top-level window
@@ -46,14 +46,8 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame, root, 
     edit_form.next_action_row = 1
     edit_form.image_refs = []
 
-    # Use cached delete image or create new one
-    global _delete_img_cache
-    if _delete_img_cache is None:
-        _delete_img_cache = tk.PhotoImage(file=resource_path("icons/3_trash-48.png"))
-        logger.debug("Created new PhotoImage for delete icon")
-    delete_img = _delete_img_cache
+    delete_img = ICON_CACHE.get("trash")
     edit_form.image_refs.append(delete_img)
-    logger.debug("Reusing cached PhotoImage for delete icon")
 
     # Fetch rule details from the database
     cursor.execute("SELECT Rule_Name, Group_ID, Rule_Active, Rule_Trigger_Mode, Rule_Proceed FROM Rules WHERE Rule_ID = ?", (rule_id,))
@@ -106,22 +100,22 @@ def edit_rule_form(rule_id, group_id, conn, cursor, form, scrolled_frame, root, 
     active_combo.set("Active" if rule_active else "Inactive")
     tk.Label(fixed_frame, text="Inactive rules will never fire.", font=(config.ha_normal), bg=config.master_bg).grid(row=3, column=2, sticky="w", padx=sc(10))
 
-    # Stop processing combobox
-    tk.Label(fixed_frame, text="Stop processing:", font=(config.ha_button), bg=config.master_bg).grid(row=4, column=0, sticky="e", padx=sc(20), pady=sc(5))
-    stop_options = ["Stop", "Proceed"]
-    stop_combo = ttk.Combobox(fixed_frame, values=stop_options, width=10, state="readonly", font=(config.ha_normal))
-    stop_combo.grid(row=4, column=1, sticky="w", padx=sc(10))
-    stop_combo.set("Stop" if not rule_proceed else "Proceed")
-    tk.Label(fixed_frame, text="When you select Stop, if triggered, later rules in the group will not be executed.", font=(config.ha_normal), bg=config.master_bg).grid(row=4, column=2, sticky="w", padx=sc(10))
-
     # Strict mode combobox
-    tk.Label(fixed_frame, text="Strict mode:", font=(config.ha_button), bg=config.master_bg).grid(row=5, column=0, rowspan=2, sticky="e", padx=sc(20), pady=sc(5))
+    tk.Label(fixed_frame, text="Strict mode:", font=(config.ha_button), bg=config.master_bg).grid(row=4, column=0, rowspan=2, sticky="e", padx=sc(20), pady=sc(5))
     strict_options = ["ALL", "Any"]
     strict_combo = ttk.Combobox(fixed_frame, values=strict_options, width=10, state="readonly", font=(config.ha_normal))
-    strict_combo.grid(row=5, column=1, rowspan=2, sticky="w", padx=sc(10))
+    strict_combo.grid(row=4, column=1, rowspan=2, sticky="w", padx=sc(10))
     strict_combo.set("Any" if rule_trigger_mode == "Any" else "ALL")
-    tk.Label(fixed_frame, text="In strict mode ALL triggers must fire for the action(s) to be executed.", font=(config.ha_normal), bg=config.master_bg).grid(row=5, column=2, sticky="w", padx=sc(10))
-    tk.Label(fixed_frame, text="In non-strict mode, ANY trigger is enough for the action(s) to be executed.", font=(config.ha_normal), bg=config.master_bg).grid(row=6, column=2, sticky="w", padx=sc(10))
+    tk.Label(fixed_frame, text="In strict mode ALL triggers must fire for the action(s) to be executed.", font=(config.ha_normal), bg=config.master_bg).grid(row=4, column=2, sticky="w", padx=sc(10))
+    tk.Label(fixed_frame, text="In non-strict mode, ANY trigger is enough for the action(s) to be executed.", font=(config.ha_normal), bg=config.master_bg).grid(row=5, column=2, sticky="w", padx=sc(10))
+
+    # Stop processing combobox
+    tk.Label(fixed_frame, text="Stop processing:", font=(config.ha_button), bg=config.master_bg).grid(row=6, column=0, sticky="e", padx=sc(20), pady=sc(5))
+    stop_options = ["Stop", "Proceed"]
+    stop_combo = ttk.Combobox(fixed_frame, values=stop_options, width=10, state="readonly", font=(config.ha_normal))
+    stop_combo.grid(row=6, column=1, sticky="w", padx=sc(10))
+    stop_combo.set("Stop" if not rule_proceed else "Proceed")
+    tk.Label(fixed_frame, text="When you select Stop, if triggered, later rules in the group will not be executed.", font=(config.ha_normal), bg=config.master_bg).grid(row=6, column=2, sticky="w", padx=sc(10))
 
     logger.debug("Edit Rule form open with top 6 fields created")
     
