@@ -1,29 +1,48 @@
 # Creates main form for the HA2 program
 
-import tkinter as tk
-from tkinter import ttk, messagebox
-from datetime import datetime
-import os
-import sys
-from datetime import timedelta
-import ctypes
-from ctypes import wintypes
-import webbrowser
-import logging
-from gui import (show_maint_toolbox, create_edit_form)
-from db import  (open_db, close_db, fetch_month_rows, fetch_transaction_sums, fetch_statement_balances, fetch_years,
-                update_account_year_transactions, fetch_account_transactions)
-from ui_utils import (refresh_grid, open_form_with_position, close_form_with_position, resource_path, set_sc, sc, Tooltip)
-from focus_forms import (create_summary_form)
-from config import (COLORS, CONFIG, init_config, load_colors_from_db, update_master_bg)
 import config
+import logging
+import traceback
 
+# Emergency logging in case of crash
+logging.basicConfig(
+    filename=r'C:\HA-Project\restart_crash.log',
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+try:
+    import tkinter as tk
+    from tkinter import ttk, messagebox
+    from datetime import datetime, date
+    import os
+    import sys
+    import time
+    #import subprocess
+    from dotenv import set_key
+    from datetime import timedelta
+    import ctypes
+    from ctypes import wintypes
+    import webbrowser
+    from gui import (show_maint_toolbox, create_edit_form)
+    from db import  (open_db, close_db, fetch_month_rows, fetch_transaction_sums, fetch_statement_balances, fetch_years,
+                    update_account_year_transactions, fetch_account_transactions, fetch_accounts_by_year, bring_forward_opening_balances,
+                    fetch_categories, fetch_subcategories, fetch_actuals)
+    from ui_utils import (refresh_grid, open_form_with_position, close_form_with_position, resource_path, set_sc, sc, Tooltip)
+    from focus_forms import (create_summary_form)
+    from config import (COLORS, get_config, init_config, load_colors_from_db, update_master_bg, load_icon_cache)
+    
+except Exception as e:
+    logging.critical("CRASH ON STARTUP: %s", traceback.format_exc())
+    raise
+    
 # Initialize configuration - sets up logger and loads DB settings
 # Sets HA for either Test or Production
-init_config() 
-
+init_config("") 
+    
 # Setup logging
 logger = logging.getLogger('HA.main')
+logger.debug(f"APP_ENV: {config.get_config('APP_ENV')}")
 logger.debug("Starting HA application")
 
 # Handle DPI scaling for high-resolution displays
@@ -33,13 +52,13 @@ try:
 except Exception as e:
     logger.error(f"Failed to set DPI awareness: {e}")
 
-accounts = []  #Global variable
+accounts = []   # Global variable
 
 def main():
     # Open database connection
-    logger.debug("Calling open_db()")
+    #logger.debug("Calling open_db()")
     conn, cursor, db_path = open_db()
-    logger.debug(f"Database opened at {db_path}")
+    #logger.debug(f"Database opened at {db_path}")
     
     # Load the colour dictionary
     load_colors_from_db(db_path)
@@ -47,22 +66,26 @@ def main():
     # Initialise TK then call set_sc IMMEDIATELY after
     root = tk.Tk()
     set_sc(root)
-        
+    
+    # Load icon cache
+    load_icon_cache()
+    
     # Start the GUI, passing the connection and cursor
-    logger.debug("Calling create_home_screen()")
+    #logger.debug("Calling create_home_screen()")
     create_home_screen(root, conn, cursor)
     
     # Close database connection when GUI exits
-    logger.debug("Calling close_db()")
+    #logger.debug("Calling close_db()")
     close_db(conn)
 
 def create_home_screen(root, conn, cursor):
     global accounts  # Keep global for now, could refactor later
     global year_var
+    global curr_mode
     
     win_id = 15
     open_form_with_position(root, conn, cursor, win_id, "HA Home Screen")
-    screen_height = sc(1045) - 2    # 1045 excludes the top title bar, so this is actually 1080 - reduce height slightly to allow task bar popup to trigger
+    screen_height = sc(1045) - 2    # 1045 excludes the top title bar, so this is actually 1080 - reduce height slightly to allow taskbar-popup to trigger
     root.geometry(f"{sc(1920)}x{screen_height}")  # Adjusted height
     root.configure(bg=config.master_bg)
     root.resizable(False,False)
@@ -71,25 +94,47 @@ def create_home_screen(root, conn, cursor):
     # Initialize fullscreen state
     is_fullscreen = tk.BooleanVar(value=False)  # Start in windowed mode
     original_overrideredirect = False
-    logger.debug("Created HA Home Screen")
+    #logger.debug("Created HA Home Screen")
 
     root.selected_row = tk.IntVar(value=-1)
     root.marked_rows = set()
-    year_var = tk.StringVar(value="2025")
     root.rows_container = None # Set later
     root.account_data = None  # Set later
     root.accounts = None  # Set later
 
-    current = datetime.today()
+    current = datetime.now()
+    curr_mode = "Sandbox"
 
+    # Variables
     tc_forecast_var = tk.StringVar(value="")
     tc_processing_var = tk.StringVar(value="")
     tc_complete_var = tk.StringVar(value="")
     tc_total_var = tk.StringVar(value="")
+    root.year_var = tk.StringVar(value=str(current.year))
 
+    def refresh_transactions():
+        """Refresh the Treeview for the current selected month."""
+        selected_tab = notebook.tab(notebook.select(), "text")
+        if selected_tab in month_map_txt:  # Only for month tabs
+            month = month_map_txt[selected_tab]
+            year = int(root.year_var.get())
+            is_current_month = (month == current.month and year == current.year)
+            # make sure that opening balance is correct for each month
+            update_account_year_transactions(cursor, conn, year, accounts)
+            # Re-fetch monthly tranaction data and refresh Treeview
+            root.rows_container = fetch_month_rows(cursor, month, year, root.accounts, root.account_data)
+            #logger.debug(f"refresh_transactions(), len(root.rows_container) = {len(root.rows_container)}")
+            if is_current_month:
+                focus_day = str(current.day) 
+            else:
+                focus_day = 1
+            root.update_ahb(root, month, int(root.year_var.get()))  # Pass root explicitly
+            refresh_grid(root.tree, root.rows_container, is_current_month, root.marked_rows, focus_day=focus_day)
+        #logger.debug(f"refresh_transactions - completed, len(root.rows_container) = {len(root.rows_container)}")
+            
     def get_current_monitor_bounds(root):
         """Get the bounds (left, top, width, height) of the monitor containing the window's center."""
-        logger.debug("get_current_monitor_bounds")
+        #logger.debug("get_current_monitor_bounds")
         # Define Windows structures
         class RECT(ctypes.Structure):
             _fields_ = [('left', ctypes.c_long),
@@ -114,8 +159,8 @@ def create_home_screen(root, conn, cursor):
         win_height = root.winfo_height()
         win_center_x = win_x + (win_width // 2)
         win_center_y = win_y + (win_height // 2)
-        logger.debug(f"Window: ({win_x}, {win_y}), size: {win_width}x{win_height}")
-        logger.debug(f"Window center: ({win_center_x}, {win_center_y}), size: {win_width}x{win_height}")
+        #logger.debug(f"Window: ({win_x}, {win_y}), size: {win_width}x{win_height}")
+        #logger.debug(f"Window center: ({win_center_x}, {win_center_y}), size: {win_width}x{win_height}")
 
         monitors = []
 
@@ -132,7 +177,7 @@ def create_home_screen(root, conn, cursor):
                 if (left <= win_center_x < left + width and
                     top <= win_center_y < top + height):
                     monitors.append((left, top, width, height))
-                logger.debug(f"Monitor found: ({left}, {top}, {width}x{height})")
+                #logger.debug(f"Monitor found: ({left}, {top}, {width}x{height})")
             return True
 
         # Enumerate monitors
@@ -159,7 +204,7 @@ def create_home_screen(root, conn, cursor):
     ttk.Style().configure("Toolbutton.TButton", font=(config.ha_head14), background=COLORS["act_but_bg"])
     
     # load and anchor images
-    logger.debug(f"scaling_factor={sc(1)}")
+    #logger.debug(f"scaling_factor={sc(1)}")
     unchecked_img = tk.PhotoImage(file=resource_path("icons/unchecked_16.png")).zoom(sc(1))
     root.unchecked_img = unchecked_img
     checked_img = tk.PhotoImage(file=resource_path("icons/checked_16.png")).zoom(sc(1))
@@ -177,22 +222,27 @@ def create_home_screen(root, conn, cursor):
     
     ############################################################################
 
-    # Initial account data fetch
-    cursor.execute( "SELECT Acc_ID, Acc_Short_Name, Acc_Open, Acc_Jan, Acc_Feb, Acc_Mar, Acc_Apr, Acc_May, Acc_Jun, "
-                    "Acc_Jul, Acc_Aug, Acc_Sep, Acc_Oct, Acc_Nov, Acc_Dec, Acc_Credit_Limit "
-                    "FROM Account WHERE Acc_Year = ? ORDER BY Acc_ID", (2025,))
-    root.account_data = cursor.fetchall()
-    root.accounts = [row[1] for row in root.account_data]
-    root.credit_limits = [float(row[15] or 0.0) for row in root.account_data]  # Index 15 = Acc_Credit_Limit
-    accounts = root.accounts
-    account_data = root.account_data
+    # Initial accounts data fetch - uses current year
+    def fetch_accounts(cursor):
+        year = root.year_var.get()
+        cursor.execute( "SELECT Acc_ID, Acc_Short_Name, Acc_Open, Acc_Jan, Acc_Feb, Acc_Mar, Acc_Apr, Acc_May, Acc_Jun, "
+                        "Acc_Jul, Acc_Aug, Acc_Sep, Acc_Oct, Acc_Nov, Acc_Dec, Acc_Credit_Limit "
+                        "FROM Account WHERE Acc_Year = ? ORDER BY Acc_ID", (year,))
+        root.account_data = cursor.fetchall()
+        root.accounts = [row[1] for row in root.account_data]
+        root.credit_limits = [float(row[15] or 0.0) for row in root.account_data]  # Index 15 = Acc_Credit_Limit
+        # Sync globals
+        global accounts, account_data
+        accounts = root.accounts
+        account_data = root.account_data
 
     # Initial transaction fetch data
+    fetch_accounts(cursor)
     root.rows_container = [fetch_month_rows(cursor, current.month, current.year, accounts, root.account_data)]
     year_label = ttk.Label(root, text="Select Year:", font=(config.ha_head14), background=config.master_bg)
     year_label.place(x=sc(200), y=sc(10))
-    root.year_var = tk.StringVar(value=str(current.year))
     year_rows = fetch_years(cursor)
+    
     year_combo = ttk.Combobox(  root, textvariable=root.year_var, values=[str(y) for y in year_rows], 
                                 font=(config.ha_head14), width=6, state="readonly")
     year_combo.place(x=sc(320), y=sc(10))
@@ -202,28 +252,29 @@ def create_home_screen(root, conn, cursor):
     
     # Define go_to_today to refresh the Home Form grid
     def go_to_today():
+        current = datetime.now()
         root.year_var.set(str(current.year))
         focus_day = str(current.day)
         notebook.select(tabs[month_map_num[current.month]])
-        root.rows_container[0] = fetch_month_rows(cursor, current.month, current.year, root.accounts, root.account_data)
-        refresh_grid(root.tree, root.rows_container[0], root.marked_rows, None, focus_day)
+        fetch_accounts(cursor)
+        root.rows_container = fetch_month_rows(cursor, current.month, current.year, root.accounts, root.account_data)
         root.update_ahb(root, current.month, current.year)  # Pass root explicitly
-        logger.debug("Home Form grid refreshed")
+        refresh_grid(root.tree, root.rows_container, True, root.marked_rows, None, focus_day)
+        #logger.debug("Home Form grid refreshed")
 
     # Routine to swap between fullscreen and windowed modes
-
     def toggle_fullscreen():
         nonlocal is_fullscreen, original_overrideredirect
         
         if is_fullscreen.get():
             # Exit fullscreen: Restore original state
-            logger.debug(f"  >> Current geometry before toggle to windowed: {root.geometry()}")    
+            #logger.debug(f"  >> Current geometry before toggle to windowed: {root.geometry()}")    
             root.overrideredirect(False)
             root.update_idletasks()  # Ensure border is restored
             
             # Get current monitor bounds (scaled)
             left, top, width, height = get_current_monitor_bounds(root)
-            logger.debug(f"Current monitor bounds: l={left}, t={top}, w={width}, h={height}")  
+            #logger.debug(f"Current monitor bounds: l={left}, t={top}, w={width}, h={height}")  
             
             # Allow for tk titlebar at top (35px unscaled) and taskbar popup detection at bottom (1px unscaled)
             height = height - sc(36)
@@ -234,8 +285,8 @@ def create_home_screen(root, conn, cursor):
             root.update_idletasks()  # Ensure geometry is applied
             is_fullscreen.set(False)
             fullscreen_btn.config(text="⛶")  # Expand icon
-            logger.debug(f"Exited fullscreen, restored geometry: {width}x{height}+{left}+{top}")
-            logger.debug(f"  >> Current geometry after toggle to windowed: {root.geometry()}")
+            #logger.debug(f"Exited fullscreen, restored geometry: {width}x{height}+{left}+{top}")
+            #logger.debug(f"  >> Current geometry after toggle to windowed: {root.geometry()}")
             
             # Move bottom button up 35px and contract treeview likewise
             bottom_button_y = bottom_button.winfo_y()
@@ -245,11 +296,11 @@ def create_home_screen(root, conn, cursor):
         else:
             # Enter fullscreen: Save state and cover current monitor
             #original_geometry = root.geometry()
-            logger.debug(f"  >> Current geometry before toggle to fullscreen: {root.geometry()}")    
+            #logger.debug(f"  >> Current geometry before toggle to fullscreen: {root.geometry()}")    
                     
             # Get current monitor bounds (scaled)
             left, top, width, height = get_current_monitor_bounds(root)
-            logger.debug(f"Current monitor bounds: l={left}, t={top}, w={width}, h={height}")    
+            #logger.debug(f"Current monitor bounds: l={left}, t={top}, w={width}, h={height}")    
             
             # Apply borderless fullscreen on current monitor
             root.overrideredirect(True)
@@ -257,8 +308,8 @@ def create_home_screen(root, conn, cursor):
             root.update_idletasks()
             is_fullscreen.set(True)
             fullscreen_btn.config(text="⧉")  # Windowed icon
-            logger.debug(f"Entered fullscreen on monitor at {left},{top} ({width}x{height})")
-            logger.debug(f"  >> Current geometry after toggle to fullscreen: {root.geometry()}")
+            #logger.debug(f"Entered fullscreen on monitor at {left},{top} ({width}x{height})")
+            #logger.debug(f"  >> Current geometry after toggle to fullscreen: {root.geometry()}")
             
             # Move bottom button down 35px and expand treeview likewise
             bottom_button_y = bottom_button.winfo_y()
@@ -268,17 +319,54 @@ def create_home_screen(root, conn, cursor):
     # Store go_to_today in root for external access
     root.refresh_home = go_to_today
     
+    # Select Environment - Live or Sandbox
+    def select_env():
+        current_env = get_config('APP_ENV')
+        new_env = "live" if current_env == 'test' else 'test'            
+        
+        if messagebox.askyesno(
+            "Confirm Environment Switch",
+            f"Are you sure you want to switch to the {new_env.upper()} environment?\n"
+            "This will close Home Accounts. Relaunch manually."
+        ):
+            env_path = os.path.join(get_config('PROG_DIR'), '.env')
+            set_key(env_path, 'APP_ENV', new_env, quote_mode='never')
+            logger.info(f"Updated .env file: APP_ENV={new_env}")
+            time.sleep(0.2) # 200ms — ensures file is flushed
+            logger.info("Closing after delay")
+            exit_program()
+                        
+    # Exit program
+    def exit_program():
+        close_form_with_position(root, conn, cursor, win_id)
+
     # Today button
-    today_date = datetime.today().strftime("%d/%m/%Y")
-    current = datetime.today()
+    today_date = datetime.now().strftime("%d/%m/%Y")
+    current = datetime.now()
     today_button = tk.Button(root, text=f"Today: {today_date}", font=(config.ha_head12), bg=COLORS["act_but_bg"],
                                 width=sc(200), height=sc(35), command=lambda: go_to_today())
     today_button.place(x=sc(690), y=sc(10), width=sc(200), height=sc(35))
     Tooltip(today_button, "Go to today's tab")
+    
+    # Function to update button text and reschedule for next midnight
+    def update_today_button():
+        current = datetime.now()
+        today_date = current.strftime("%d/%m/%Y")
+        today_button.config(text=f"Today: {today_date}")
+        
+        # Calculate ms until next midnight
+        next_midnight = (current + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        ms_until_midnight = int((next_midnight - current).total_seconds() * 1000)
+        
+        # Reschedule this function
+        root.after(ms_until_midnight, update_today_button)
 
+    # Call once after button creation to start the cycle
+    update_today_button()
+    
     # Settings button
     gear_btn = tk.Button(root, text="⚙", font=(config.ha_help), width=sc(2), height=1, relief="raised", bg=COLORS["act_but_bg"],
-                            command=lambda: show_maint_toolbox(root, conn, cursor, refresh_colors))
+                            command=lambda: show_maint_toolbox(root, conn, cursor, refresh_colors, refresh_transactions, focus_refresh))
     gear_btn.place(x=sc(10), y=sc(10))
     Tooltip(gear_btn, "Open Settings")
     
@@ -294,19 +382,19 @@ def create_home_screen(root, conn, cursor):
     help_btn.place(x=sc(1850), y=sc(10))
     Tooltip(help_btn, "Open User Guide")
 
-    def exit_program():
-        close_form_with_position(root, conn, cursor, win_id)
-
+    # Exit Program button
     exit_button = tk.Button(root, text="EXIT PROGRAM", font=(config.ha_head14), 
                             bg=COLORS["exit_but_bg"], width=sc(200), height=sc(35), command=exit_program)
     exit_button.place(x=sc(1180), y=sc(10), width=sc(210), height=sc(35))
 
-    cursor.execute( "SELECT Acc_ID, Acc_Short_Name, Acc_Open, Acc_Jan, Acc_Feb, Acc_Mar, Acc_Apr, Acc_May, Acc_Jun, "
-                    "Acc_Jul, Acc_Aug, Acc_Sep, Acc_Oct, Acc_Nov, Acc_Dec FROM Account WHERE Acc_Year = ? ORDER BY Acc_ID", 
-                    (int(root.year_var.get()),))
-    root.account_data = cursor.fetchall()
-    root.accounts = [row[1] for row in account_data] if account_data else ["Cash", "Bank 1", "Bank 2", "Bank 3", "Bank 4", "Bank 5", "CC 1", "CC 2", "CC 3", "CC 4", "CC 5", "Savings", "Investments", "Loans"]
-    
+    # Live/Sandbox button
+    current_env = get_config('APP_ENV')
+    mode_button = tk.Button(root, text=current_env.upper(), font=(config.ha_head12), bg=COLORS["act_but_bg"],
+                            width=sc(100), height=sc(35), command=lambda: select_env())
+    mode_button.place(x=sc(1550), y=sc(10), width=sc(100), height=sc(35))
+    Tooltip(mode_button, "Switch between Live and Sandbox modes")
+
+    # Set header labels for treeview
     grid_labels = root.accounts
     headers = ["Day", "Date", "R", "Income", "Expense", "Description / Payee"] + grid_labels
 
@@ -321,14 +409,14 @@ def create_home_screen(root, conn, cursor):
             y_pos = sc(50) + row * btn_height
             if row == 0:
                 btn = tk.Button(root, text=grid_labels[col] if col < len(grid_labels) else f"Col{col+1}", 
-                                font=(config.ha_normal_bold), bg=COLORS["act_but_bg"], fg=COLORS["act_but_tx"],
+                                font=(config.ha_head11), bg=COLORS["act_but_bg"], fg=COLORS["act_but_tx"],
                                 command=lambda c=col: on_ahb_acc_button(c))
                 Tooltip(btn, "Show Account Transactions")
             elif row == 3:
-                btn = tk.Button(root, text=f"R{row+1}C{col+1}", font=(config.ha_normal), 
+                btn = tk.Button(root, text=f"R{row+1}C{col+1}", font=(config.ha_button), 
                                 bg=COLORS["act_but_bg"], command=lambda c=col: on_ahb_today_button(c))
             else:
-                btn = tk.Button(root, text="", font=(config.ha_normal), 
+                btn = tk.Button(root, text="", font=(config.ha_button), 
                                 bg=COLORS["white"], state="disabled", disabledforeground=COLORS["black"])
                 if row == 4:  # Processing Transactions
                     btn.config(disabledforeground=COLORS["pending_tx"])
@@ -409,6 +497,27 @@ def create_home_screen(root, conn, cursor):
     notebook = ttk.Notebook(notebook_frame)
     notebook.pack(side="left", fill="none")  # No fill, let tabs define width
 
+    # Allow special tabs to always open their form on click
+    def on_tab_click(event):
+        # Identify which tab was clicked (even if already selected)
+        clicked_tab_id = notebook.tk.call(notebook._w, "identify", "tab", event.x, event.y)
+        if clicked_tab_id == "":
+            return  # Clicked outside tabs
+        clicked_tab_text = notebook.tab(clicked_tab_id, "text")
+        
+        if clicked_tab_text == "SUMMARY":
+            create_summary_form(root, conn, cursor, root.year_var.get(), refresh_transactions)
+            return "break"  # Prevent default selection change
+        elif clicked_tab_text == " BUDGET ":
+            create_budget_form(root, conn, cursor)
+            return "break"
+        elif clicked_tab_text == " COMPARE ":
+            create_compare_form(root, conn, cursor, root.year_var.get(), refresh_transactions)
+            return "break"
+        # Add more special tabs here if needed (e.g., PREV/NEXT if desired)
+    
+    notebook.bind("<Button-1>", on_tab_click, add=True)
+    
     tabs = {
         "SUMMARY": ttk.Frame(notebook), " BUDGET ": ttk.Frame(notebook), "PREV": ttk.Frame(notebook),
         " JAN": ttk.Frame(notebook), " FEB": ttk.Frame(notebook), " MAR": ttk.Frame(notebook),
@@ -431,7 +540,7 @@ def create_home_screen(root, conn, cursor):
     # Define Treeview styles
     style = ttk.Style()
     style.configure("Treeview.Heading", font=(config.ha_head11))  # Can set font for header row
-    style.configure("Treeview", rowheight=sc(18), background="title2_bg")
+    style.configure("Treeview", rowheight=sc(20), background="title2_bg")
     root.tree = ttk.Treeview(tree_frame, columns=[f"col{i}" for i in range(20)], show="headings", height=40, style="Treeview")
     scrollbar = tk.Scrollbar(tree_frame, orient="vertical", command=root.tree.yview)
     root.tree.configure(yscrollcommand=scrollbar.set)
@@ -460,7 +569,10 @@ def create_home_screen(root, conn, cursor):
     # Define Total row tags
     root.tree.tag_configure("overlimit", background=COLORS["dtot_ol_bg"], foreground=COLORS["dtot_ol_tx"], font=(config.ha_head11))
     root.tree.tag_configure("daily_total", background=COLORS["dtot_bg"], foreground=COLORS["dtot_tx"], font=(config.ha_normal))
-
+    root.tree.tag_configure("today_marker", background="#108010", foreground="#E0E0E0", font=(config.ha_normal_bold))  # Dark Green bg, White fg, bold
+    #root.tree.tag_configure("today_total", background=COLORS["dtot_bg"], foreground="#FF0000", font=(config.ha_normal_bold))  # Same bg as daily_total, red fg, bold
+    #root.tree.tag_configure("today_trans", foreground="#FF0000")  # Red fg for transactions on today
+    
     # Define non-Total row tags
     root.tree.tag_configure("weekday", background=COLORS["tran_wk_bg"])
     root.tree.tag_configure("weekend", background=COLORS["tran_we_bg"])
@@ -473,19 +585,44 @@ def create_home_screen(root, conn, cursor):
     root.tree.tag_configure("processing", foreground=COLORS["pending_tx"], font=(config.ha_normal))
     root.tree.tag_configure("complete", foreground=COLORS["complete_tx"], font=(config.ha_normal))
 
-    # Focal point markers at row 12
-    marker_x = sc(280)
+    # Focal point markers at row 12 default or else scroll_row (y needs = 62 offset + 20px per row)
+    v_offset = sc(62+(int(config.scroll_row)*20))
     marker_y = sc(18)
     left_canvas = tk.Canvas(root, bg=config.master_bg, highlightthickness=0, width=sc(10), height=sc(40))
-    left_canvas.place(x=0, y=sc(218) + marker_x)
+    left_canvas.place(x=0, y=sc(218) + v_offset)
     left_canvas.create_text(5, marker_y, text=">", font=(config.ha_head14), fill="red", anchor="center")
     right_canvas = tk.Canvas(root, bg=config.master_bg, highlightthickness=0, width=sc(20), height=sc(40))
-    right_canvas.place(x=sc(1702), y=sc(218) + marker_x)
+    right_canvas.place(x=sc(1702), y=sc(218) + v_offset)
     right_canvas.create_text(5, marker_y, text="<", font=(config.ha_head14), fill="red", anchor="center")
 
+    # Refresh focal point markers if setting changed by user
+    def focus_refresh():
+        """Reposition the left and right focal point markers based on config.scroll_row."""
+        # Calculate new vertical offset: base + (scroll_row * 20px per row)
+        v_offset = sc(62 + (int(config.scroll_row) * 20))
+        
+        # Move both canvases to the new Y position
+        left_canvas.place_configure(y=sc(218) + v_offset)
+        right_canvas.place_configure(y=sc(218) + v_offset)
+        
+        logger.debug(f"Focus row markers refreshed to row {config.scroll_row} (Y offset: {v_offset})")
+        # prepare to refresh grid - which will move focus markers
+        selected_tab = notebook.tab(notebook.select(), "text")
+        if selected_tab in month_map_txt:
+            month_idx = month_map_txt[selected_tab] # get tab number, Jan=1, Dec=12
+        # If it is current month/year then set focus_day to today, else 1
+        if month_idx == int(current.month) and int(root.year_var.get()) == int(current.year):
+            focus_day = str(current.day) 
+            is_current_month = True
+        else:
+            focus_day = 1
+            is_current_month = False
+        root.update_ahb(root, month_idx, int(root.year_var.get()))  # Pass root explicitly
+        refresh_grid(root.tree, root.rows_container, is_current_month, root.marked_rows, focus_day=focus_day)
+        
     # Initialize rows
     month_map_num = {1: " JAN", 2: " FEB", 3: " MAR", 4: " APR", 5: " MAY", 6: " JUN", 7: " JUL", 8: " AUG", 9: " SEP", 10: " OCT", 11: " NOV", 12: " DEC"}
-    root.rows_container[0] = fetch_month_rows(cursor, current.month, current.year, root.accounts, root.account_data)
+    root.rows_container = fetch_month_rows(cursor, current.month, current.year, root.accounts, root.account_data)
     notebook.select(tabs[month_map_num[current.month]])
     month_map_txt = {" JAN": 1, " FEB": 2, " MAR": 3, " APR": 4, " MAY": 5, " JUN": 6, " JUL": 7, " AUG": 8, " SEP": 9, " OCT": 10, " NOV": 11, " DEC": 12}
 
@@ -496,7 +633,7 @@ def create_home_screen(root, conn, cursor):
     root.get_current_month = get_current_month  # Attach to root    
 
     def create_budget_form(parent, conn, cursor):  # PLACEHOLDER ***************
-        logger.debug("Create Budget Form")
+        #logger.debug("Create Budget Form")
         form = tk.Toplevel(parent)
         win_id = 12
         open_form_with_position(form, conn, cursor, win_id, "Annual Budget Performance")
@@ -506,20 +643,321 @@ def create_home_screen(root, conn, cursor):
                     command=lambda: close_form_with_position(form, conn, cursor, win_id)).pack(pady=10)
         form.wait_window()
 
-    def create_compare_form(parent, conn, cursor):  # PLACEHOLDER ***************
+    # Module-level month_names
+    month_names = {
+        1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
+        7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"
+    }
+
+    def create_compare_form(parent, conn, cursor, year, tree_refresh_callback):                          # Win_ID = 13 
         form = tk.Toplevel(parent)
         win_id = 13
-        open_form_with_position(form, conn, cursor, win_id, "Compare Current Year to Previous Year")
-        form.geometry(f"{sc(800)}x{sc(600)}")  # Adjust size 
-        #form.geometry("800x860")
-        tk.Label(form, text="Compare Current Year to Previous Year - Under Construction", font=(config.ha_large)).pack(pady=20)
-        tk.Button(  form, text="Close", width=15, background=COLORS["exit_but_bg"],
-                    command=lambda: close_form_with_position(form, conn, cursor, win_id)).pack(pady=10)
-        form.wait_window()
+        open_form_with_position(form, conn, cursor, win_id, "Compare")
+        form.geometry(f"{sc(840)}x{sc(1000)}")  # Adjust size
+        form.resizable(False, False)
+        form.configure(bg=config.master_bg)
+        form.grab_set()
+
+        # Variables
+        selected_year = tk.StringVar(value=str(year))
+        refresh_needed = tk.BooleanVar(value=True)
+        selected_row = tk.StringVar()
+        is_expanded = tk.BooleanVar(value=False)  # Track expansion state
+
+        # Year Label
+        tk.Label(form, text=f"Year: {year}", font=(config.ha_large), bg=config.master_bg).place(x=sc(20), y=sc(20))
+
+        # Treeview
+        columns = ("Category", "Prev Year", "Curr Year", "Difference")
+        tree = ttk.Treeview(form, columns=columns, show="headings", height=sc(40), selectmode="browse")
+        tree.place(x=sc(20), y=sc(100), width=sc(800), height=sc(865))
+        tree.tag_configure("parent", background=COLORS["act_but_bg"], font=(config.ha_button))  # Arial 11 for parent rows
+        tree.tag_configure("child", font=(config.ha_normal))  # Arial 10 for child rows
+
+        widths = [sc(220)] + [sc(190)] + [sc(190)] + [sc(190)]
+        for col, width in zip(columns, widths):
+            tree.heading(col, text=col, anchor="center")
+            tree.column(col, width=width, anchor="e")
+        tree.column("Category", anchor="w")
+        tree.column("#0", width=sc(5), anchor="center")
+
+        # Buttons
+        expand_button = tk.Button(  form, text="Expand All", width=20, font=(config.ha_button), command=lambda: toggle_treeview())
+        expand_button.place(x=sc(20), y=sc(60))
+        
+        drill_down_button = tk.Button(  form, text="Drill Down", width=20, font=(config.ha_button), command=lambda: show_drill_down(), state="disabled")
+        drill_down_button.place(x=sc(645), y=sc(20))
+
+        tk.Button(form, text="Close", width=20, font=(config.ha_button), bg=COLORS["exit_but_bg"],
+                    command=lambda: [close_form_with_position(form, conn, cursor, win_id), tree_refresh_callback()]).place(x=sc(645), y=sc(60))
+
+        # User guide
+        user_guide=tk.Label(form, text="(double-click a parent row to open/close that category)", font=(config.ha_note), background=config.master_bg)
+        user_guide.place(x=sc(20), y=sc(975))
+
+        def toggle_treeview():
+            if is_expanded.get():
+                # Fold: Close all parent rows to hide children
+                for item in tree.get_children():
+                    tree.item(item, open=False)
+                expand_button.config(text="Expand All")
+                is_expanded.set(False)
+            else:
+                # Expand: Open all parent and child rows
+                for item in tree.get_children():
+                    tree.item(item, open=True)
+                    for child in tree.get_children(item):
+                        tree.item(child, open=True)
+                expand_button.config(text="Fold All")
+                is_expanded.set(True)
+
+        def fetch_yearly_actuals(pid, cid, tr_type, year):
+            # Sum of Tr_Amount for the year in the category
+            yearly_total = sum(fetch_actuals(cursor, pid, cid, m, year) for m in range(1, 13))
+            return yearly_total
+
+        def fetch_transactions(year, pid, cid):
+            # Fetch transactions for the given year, PID, and CID, sorted by date
+            query = """
+                SELECT Tr_Day, Tr_Month, Tr_Desc, Tr_Amount, Tr_Query_Flag, Tr_ID, Tr_Stat
+                FROM Trans
+                WHERE Tr_Year=? AND Tr_Exp_ID=? AND Tr_ExpSub_ID=? AND Tr_Type IN (1, 2)
+                ORDER BY Tr_Month, Tr_Day
+            """
+            cursor.execute(query, (year, pid, cid))
+            return cursor.fetchall()
+
+        def show_drill_down():
+            selected = tree.selection()
+            if not selected:
+                return
+            item = selected[0]
+            if not item.startswith("child_"):
+                return
+            try:
+                _, pid, cid = item.split("_")
+                pid, cid = int(pid), int(cid)
+            except ValueError:
+                return
+            curr_year = int(selected_year.get())
+            prev_year = curr_year - 1
+
+            dd_form = tk.Toplevel(form)
+            open_form_with_position(dd_form, conn, cursor, 30, "Transactions making up this row of the Compare")
+            dd_form.geometry(f"{sc(1200)}x{sc(935)}")
+            dd_form.resizable(False, False)
+            dd_form.configure(bg=config.master_bg)
+            dd_form.grab_set()
+            dd_form.lift()
+            dd_form.focus_set()
+
+            # Prev Year Label and Treeview
+            tk.Label(dd_form, text=f"Previous Year ({prev_year})", font=(config.ha_large), bg=config.master_bg).place(x=sc(20), y=sc(10))
+            prev_dd_columns = ("Day", "Month", "Description", "Amount")
+            prev_dd_tree = ttk.Treeview(dd_form, columns=prev_dd_columns, show="headings", height=40)
+            prev_dd_tree.place(x=sc(20), y=sc(50), width=sc(550), height=sc(820))
+            prev_scrollbar = ttk.Scrollbar(dd_form, orient="vertical", command=prev_dd_tree.yview)
+            prev_scrollbar.place(x=sc(570), y=sc(50), height=sc(820))
+            prev_dd_tree.configure(yscrollcommand=prev_scrollbar.set)
+            
+            prev_dd_tree.tag_configure("total", background=COLORS["act_but_bg"], font=(config.ha_normal))
+            prev_dd_tree.tag_configure("marked", background=COLORS["flag_dd_bg"], font=(config.ha_normal))
+            prev_dd_tree.tag_configure("forecast", foreground=COLORS["forecast_tx"], font=(config.ha_normal))
+            prev_dd_tree.tag_configure("processing", foreground=COLORS["pending_tx"], font=(config.ha_normal))
+            prev_dd_tree.tag_configure("complete", foreground=COLORS["complete_tx"], font=(config.ha_normal))
+
+            dd_widths = [20, 20, 350, 70]
+            dd_anchors = ["center", "center", "w", "e"]
+            for col, width, anchor in zip(prev_dd_columns, dd_widths, dd_anchors):
+                prev_dd_tree.heading(col, text=col, anchor="center")
+                prev_dd_tree.column(col, width=width, anchor=anchor) 
+
+            # Curr Year Label and Treeview
+            tk.Label(dd_form, text=f"Current Year ({curr_year})", font=(config.ha_large), bg=config.master_bg).place(x=sc(620), y=sc(10))
+            curr_dd_columns = ("Day", "Month", "Description", "Amount")
+            curr_dd_tree = ttk.Treeview(dd_form, columns=curr_dd_columns, show="headings", height=40)
+            curr_dd_tree.place(x=sc(620), y=sc(50), width=sc(550), height=sc(820))
+            curr_scrollbar = ttk.Scrollbar(dd_form, orient="vertical", command=curr_dd_tree.yview)
+            curr_scrollbar.place(x=sc(1170), y=sc(50), height=sc(820))
+            curr_dd_tree.configure(yscrollcommand=curr_scrollbar.set)
+            
+            curr_dd_tree.tag_configure("total", background=COLORS["act_but_bg"], font=(config.ha_normal))
+            curr_dd_tree.tag_configure("marked", background=COLORS["flag_dd_bg"], font=(config.ha_normal))
+            curr_dd_tree.tag_configure("forecast", foreground=COLORS["forecast_tx"], font=(config.ha_normal))
+            curr_dd_tree.tag_configure("processing", foreground=COLORS["pending_tx"], font=(config.ha_normal))
+            curr_dd_tree.tag_configure("complete", foreground=COLORS["complete_tx"], font=(config.ha_normal))
+
+            for col, width, anchor in zip(curr_dd_columns, dd_widths, dd_anchors):
+                curr_dd_tree.heading(col, text=col, anchor="center")
+                curr_dd_tree.column(col, width=width, anchor=anchor) 
+
+            def populate_transactions(tree, transactions):
+                current_month = None
+                month_total = 0.0
+                month_items = []
+
+                for tr_day, tr_month, tr_desc, tr_amount, tr_query_flag, tr_id, tr_stat in transactions:
+                    if current_month is None:
+                        current_month = tr_month
+                    if tr_month != current_month:
+                        if month_items:
+                            tree.insert("", "end", values=("", "", f"{month_names[current_month]} Total", f"{month_total:,.2f}  "),
+                                tags=("total",))
+                        current_month = tr_month
+                        month_total = 0.0
+                        month_items = []
+                    month_total += tr_amount
+                    tags = []
+                    if tr_query_flag & 8:
+                        tags.append("marked")
+                    if tr_stat == 1:
+                        tags.append("forecast")
+                    elif tr_stat == 2:
+                        tags.append("processing")
+                    elif tr_stat == 3:
+                        tags.append("complete")
+                    tree.insert("", "end", values=(tr_day, month_names[tr_month], tr_desc, f"{tr_amount:,.2f}  "),
+                        tags=tags, iid=f"tr_{tr_id}")
+                    month_items.append((tr_day, tr_month, tr_desc, tr_amount, tr_query_flag, tr_id, tr_stat))
+
+                if month_items:
+                    tree.insert("", "end", values=("", "", f"{month_names[current_month]} Total", f"{month_total:,.2f}  "),
+                        tags=("total",))
+
+            # Populate prev and curr trees
+            prev_transactions = fetch_transactions(prev_year, pid, cid)
+            populate_transactions(prev_dd_tree, prev_transactions)
+            curr_transactions = fetch_transactions(curr_year, pid, cid)
+            populate_transactions(curr_dd_tree, curr_transactions)
+
+            # Buttons
+            tk.Button(  dd_form, text="Close", font=(config.ha_button), bg=COLORS["exit_but_bg"],
+                        command=lambda: close_form_with_position(dd_form, conn, cursor, 30)).place(x=sc(1050), y=sc(890), width=sc(100))
+            prev_mark_btn = tk.Button(  dd_form, text="Mark", font=(config.ha_button),
+                        command=lambda: toggle_mark(prev_dd_tree)).place(x=sc(50), y=sc(890), width=sc(100))
+            curr_mark_btn = tk.Button(  dd_form, text="Mark (space)", font=(config.ha_button),
+                        command=lambda: toggle_mark(curr_dd_tree)).place(x=sc(650), y=sc(890), width=sc(100))
+
+            def toggle_mark(tree_widget):
+                selected = tree_widget.selection()
+                if not selected:
+                    messagebox.showwarning("Warning", "Please select a transaction to mark.")
+                    return
+                item = selected[0]
+                if not item.startswith("tr_"):
+                    messagebox.showwarning("Warning", "Please select a transaction, not a totals row.")
+                    return
+                tr_id = int(item.replace("tr_", ""))
+                cursor.execute("SELECT Tr_Query_Flag, Tr_Stat FROM Trans WHERE Tr_ID=?", (tr_id,))
+                current_flag, tr_stat = cursor.fetchone()
+                new_flag = current_flag | 8 if not (current_flag & 8) else current_flag & ~8
+                cursor.execute("UPDATE Trans SET Tr_Query_Flag=? WHERE Tr_ID=?", (new_flag, tr_id))
+                conn.commit()
+                tr_data = cursor.execute("SELECT Tr_Day, Tr_Month, Tr_Desc, Tr_Amount FROM Trans WHERE Tr_ID=?", (tr_id,)).fetchone()
+                tags = []
+                if new_flag & 8:
+                    tags.append("marked")
+                if tr_stat == 1:
+                    tags.append("forecast")
+                elif tr_stat == 2:
+                    tags.append("processing")
+                elif tr_stat == 3:
+                    tags.append("complete")
+                tree_widget.item(item, values=(tr_data[0], month_names[tr_data[1]], tr_data[2], f"{tr_data[3]:,.2f}  "), tags=tags)
+
+            def on_spacebar(event):
+                toggle_mark(curr_dd_tree)
+
+            #prev_dd_tree.bind("<space>", lambda e: on_spacebar(e, prev_dd_tree))
+            curr_dd_tree.bind("<space>", lambda e: on_spacebar(e, curr_dd_tree))
+
+        def refresh_data():
+            if not refresh_needed.get():
+                return
+            curr_year = int(selected_year.get())
+            prev_year = curr_year - 1
+            tree.delete(*tree.get_children())
+
+            def populate_category(cat_pid, cat_desc, is_income):
+                subcats = fetch_subcategories(cursor, cat_pid, curr_year)
+
+                # Parent row: Sum actuals across subcategories
+                prev_monthly_actuals = [0.0] * 12
+                curr_monthly_actuals = [0.0] * 12
+                if subcats:
+                    for cid, _ in subcats:
+                        for m in range(1, 13):
+                            prev_monthly_actuals[m-1] += fetch_actuals(cursor, cat_pid, cid, m, prev_year)
+                            curr_monthly_actuals[m-1] += fetch_actuals(cursor, cat_pid, cid, m, curr_year)
+                else:
+                    for m in range(1, 13):
+                        prev_monthly_actuals[m-1] = fetch_actuals(cursor, cat_pid, 0, m, prev_year)
+                        curr_monthly_actuals[m-1] = fetch_actuals(cursor, cat_pid, 0, m, curr_year)
+
+                prev_total = sum(prev_monthly_actuals)
+                curr_total = sum(curr_monthly_actuals)
+                diff = curr_total - prev_total
+
+                values = [cat_desc, 
+                        "" if prev_total == 0.0 else f"{prev_total:,.2f}  ", 
+                        "" if curr_total == 0.0 else f"{curr_total:,.2f}  ", 
+                        "" if diff == 0.0 else f"{diff:,.2f}  "]
+                parent = tree.insert("", "end", text="", values=values, open=False, tags=("parent",))
+
+                # Child rows with description in PID/CID column
+                for cid, sub_desc in subcats:
+                    sub_prev_monthly = [fetch_actuals(cursor, cat_pid, cid, m, prev_year) for m in range(1, 13)]
+                    sub_curr_monthly = [fetch_actuals(cursor, cat_pid, cid, m, curr_year) for m in range(1, 13)]
+                    sub_prev_total = sum(sub_prev_monthly)
+                    sub_curr_total = sum(sub_curr_monthly)
+                    sub_diff = sub_curr_total - sub_prev_total
+                    sub_values = [f"   {sub_desc}", 
+                                "" if sub_prev_total == 0.0 else f"{sub_prev_total:,.2f}  ", 
+                                "" if sub_curr_total == 0.0 else f"{sub_curr_total:,.2f}  ", 
+                                "" if sub_diff == 0.0 else f"{sub_diff:,.2f}  "]
+                    tree.insert(parent, "end", text="", values=sub_values, iid=f"child_{cat_pid}_{cid}", tags=("child",))
+
+                return parent
+
+            # Populate Income and Expense categories
+            income_cats = fetch_categories(cursor, curr_year, is_income=True)
+            expense_cats = fetch_categories(cursor, curr_year, is_income=False)
+
+            for pid, desc in income_cats:
+                populate_category(pid, desc, True)
+
+            for pid, desc in expense_cats:
+                if pid != 99:  # Exclude special categories if needed
+                    populate_category(pid, desc, False)
+
+            refresh_needed.set(False)
+
+        def on_tree_select(event):
+            selected = tree.selection()
+            if selected:
+                item = selected[0]
+                parent_item = tree.parent(item)
+                # Enable Drill Down only for child rows under Income/Expense categories
+                is_child = item.startswith("child_") and parent_item
+                drill_down_button.config(state="normal" if is_child else "disabled")
+                selected_row.set(tree.item(item, "values")[0].strip() if is_child else "")
+            else:
+                drill_down_button.config(state="disabled")
+                selected_row.set("")
+
+        tree.bind("<<TreeviewSelect>>", on_tree_select)
+
+        refresh_data()
+
+        while form.winfo_exists():
+            if refresh_needed.get():
+                refresh_data()
+            form.update_idletasks()
+            form.update()
 
     def create_account_list_form(parent, conn, cursor, acc):
         """Create a form to list all transactions for a single account for the current year, in date order by month."""
-        logger.debug(f"Creating account transaction list form for account index {acc}")
+        #logger.debug(f"Creating account transaction list form for account index {acc}")
         form = tk.Toplevel(parent)
         win_id = 16
         open_form_with_position(form, conn, cursor, win_id, "List all Transactions for a Single Account")
@@ -531,11 +969,12 @@ def create_home_screen(root, conn, cursor):
         account_name = parent.accounts[acc]
         acc_id = parent.account_data[acc][0]
         acc_limit = parent.account_data[acc][15]
-        logger.debug(f"Account: {account_name}, Acc_ID: {acc_id}, Acc_Credit_Limit: {acc_limit}")
+        #logger.debug(f"Account: {account_name}, Acc_ID: {acc_id}, Acc_Credit_Limit: {acc_limit}")
 
         # Initialize selected row
         form.selected_row = tk.IntVar(value=-1)
         focus_row = 0
+        focus_tr_id = 0
         
         # Account Name label
         acc_name_label = tk.Label(form, text=account_name, font=(config.ha_head14), 
@@ -547,6 +986,11 @@ def create_home_screen(root, conn, cursor):
         trans_count_label = tk.Label(form, textvariable=trans_count_var, bg=config.master_bg, font=(config.ha_large))     
         trans_count_label.place(x=sc(790), y=sc(50), width=sc(200), height=sc(30))
         
+        # Configure Treeview styles
+        style = ttk.Style()
+        style.configure("Treeview.Heading", font=(config.ha_head11))
+        style.configure("Treeview", rowheight=sc(20), font=(config.ha_normal), background=COLORS["white"])
+        
         # Treeview for transactions
         tree_frame = tk.Frame(form, bg=config.master_bg)
         tree_frame.place(x=sc(20), y=sc(10), width=sc(750), height=sc(990))
@@ -557,11 +1001,6 @@ def create_home_screen(root, conn, cursor):
         tree.pack(side="left", fill="y")
         scrollbar.pack(side="right", fill="y")
         
-        # Configure Treeview styles
-        style = ttk.Style()
-        style.configure("Treeview.Heading", font=(config.ha_head11))
-        style.configure("Treeview", rowheight=sc(20), font=(config.ha_normal), background=COLORS["white"])
-        
         # Column headings and widths
         headers = ["Day", "Date", "Description / Payee", "Income", "Expense", "Balance"]
         widths = [sc(40), sc(90), sc(300), sc(100), sc(100), sc(100)]
@@ -571,6 +1010,11 @@ def create_home_screen(root, conn, cursor):
             tree.column(col, width=width, anchor=anchor, stretch=False)
         
         # Define Treeview tags
+        tree.tag_configure("marked", background=COLORS["flag_mk_bg"])
+        tree.tag_configure("yellow", background=COLORS["flag_y_bg"])
+        tree.tag_configure("green", background=COLORS["flag_g_bg"])
+        tree.tag_configure("cyan", background=COLORS["flag_b_bg"])
+        tree.tag_configure("orange", background=COLORS["flag_dd_bg"])
         tree.tag_configure("weekday", background=COLORS["tran_wk_bg"])
         tree.tag_configure("weekend", background=COLORS["tran_we_bg"])
         tree.tag_configure("forecast", foreground=COLORS["forecast_tx"])
@@ -578,10 +1022,8 @@ def create_home_screen(root, conn, cursor):
         tree.tag_configure("complete", foreground=COLORS["complete_tx"])
         tree.tag_configure("daily_total", background=COLORS["dtot_bg"], foreground=COLORS["dtot_tx"])
         tree.tag_configure("overlimit", background=COLORS["dtot_ol_bg"], foreground=COLORS["dtot_ol_tx"])
-        tree.tag_configure("flag1", background=COLORS["flag_y_bg"])
-        tree.tag_configure("flag2", background=COLORS["flag_g_bg"])
-        tree.tag_configure("flag3", background=COLORS["flag_b_bg"])
-        
+        tree.tag_configure("today_marker", background="#108010", foreground="#E0E0E0", font=(config.ha_normal_bold))  # Dark Green bg, White fg, bold
+    
         # Fetch FF checkbox setting
         cursor.execute("SELECT Lup_seq FROM Lookups WHERE Lup_LupT_ID = 8")
         ff_flag = cursor.fetchone()[0]
@@ -591,36 +1033,47 @@ def create_home_screen(root, conn, cursor):
         trans_rows = fetch_account_transactions(cursor, acc_id, year, parent.account_data[acc], ff_flag, acc_limit)
         
         # Populate Treeview
-        def refresh_tree():
-            nonlocal trans_rows, focus_row
+        def refresh_tree(new_tr_id=None):
+            nonlocal trans_rows, focus_row, focus_tr_id
+            if root.marked_rows is None:
+                root.marked_rows = set()
             trans_rows[:] = fetch_account_transactions(cursor, acc_id, year, parent.account_data[acc], ff_flag, acc_limit)
             tree.delete(*tree.get_children())
             trans_count = sum(1 for row in trans_rows if row["status"] != "Total")
             trans_count_var.set(f"Transactions: {trans_count}")
             for i, row in enumerate(trans_rows):
                 tags = []
+                flag = row["flag"]
+                bg_key = "weekend" if row["is_weekend"] else "weekday"
                 if row["status"] == "Total":
                     tags.append("daily_total" if not row["overlimit"] else "overlimit")
                 else:
-                    tags.append("weekend" if row["is_weekend"] else "weekday")
+                    # set text colour
                     if row["status"] == "Forecast":
                         tags.append("forecast")
                     elif row["status"] == "Processing":
                         tags.append("processing")
                     elif row["status"] == "Complete":
                         tags.append("complete")
-                    if row["flag"] == 1:
-                        tags.append("flag1")
-                    elif row["flag"] == 2:
-                        tags.append("flag2")
-                    elif row["flag"] == 4:
-                        tags.append("flag3")
+                    # set background colour
+                    if i in root.marked_rows:
+                        tags.append("marked")
+                    elif flag & 1:
+                        tags.append("yellow")
+                    elif flag & 2:
+                        tags.append("green")
+                    elif flag & 4:
+                        tags.append("cyan")
+                    elif flag & 8:
+                        tags.append("orange")
+                    else:
+                        tags.append(bg_key)
                 income_str = ""
                 expense_str = ""
                 if row["income"] or row["expense"]:
-                    if row["exp_id"] == 99:
-                        income_str = f"{row['income']:,.2f} ??" if row["income"] else ""
-                        expense_str = f"{-row['expense']:,.2f} ??" if row["expense"] else ""
+                    if row["type"] != "Transfer" and row["exp_id"] == 99:
+                        income_str = f"{row['income']:,.2f} ?" if row["income"] else ""
+                        expense_str = f"{-row['expense']:,.2f} ?" if row["expense"] else ""
                     else:
                         income_str = f"{row['income']:,.2f}" if row["income"] else ""
                         expense_str = f"{-row['expense']:,.2f}" if row["expense"] else ""
@@ -630,28 +1083,30 @@ def create_home_screen(root, conn, cursor):
                     row["desc"],
                     income_str,
                     expense_str,
-                    "{:,.2f}".format(row["balance"]) if row["status"] == "Total" and row["balance"] else ""
+                    "{:,.2f}".format(row["balance"]) if row["balance"] else ""
                 )
                 # Use unique iid: index for non-totals, total_index for totals
                 iid = str(i) if row["status"] != "Total" else f"total_{i}"
                 tree.insert("", "end", iid=iid, values=values, tags=tags)
             # Scroll to current day or last transaction
-            if focus_row > 0:
-                if focus_row > 14:
-                    i = focus_row-15
-                else:
-                    i = 0
-                tree.yview_moveto((i) / len(trans_rows) if len(trans_rows) > 0 else 0)
-                tree.selection_set(str(focus_row))
-                form.selected_row.set(focus_row)
+            if new_tr_id != None:
+                focus_tr_id = new_tr_id
+            if focus_tr_id > 0:
+                for i, row in enumerate(trans_rows):
+                    if row.get("tr_id") == focus_tr_id:
+                        scroll_offset = max(0, i - config.scroll_row)
+                        tree.yview_moveto(scroll_offset / len(trans_rows))
+                        break
+
+            elif focus_row > 0:
+                scroll_offset = max(0, focus_row - config.scroll_row)
+                tree.yview_moveto((scroll_offset) / len(trans_rows) if len(trans_rows) > 0 else 0)
             else:
                 current = datetime.now()
                 if year == current.year:
                     for i, row in enumerate(trans_rows):
                         if row["month"] == current.month and row["num_day"] and row["num_day"] >= current.day:
                             tree.yview_moveto((i-15) / len(trans_rows) if len(trans_rows) > 0 else 0)
-                            tree.selection_set(str(i))
-                            form.selected_row.set(i)
                             break
         
         # Bind refresh_tree to form for access in create_edit_form
@@ -674,8 +1129,9 @@ def create_home_screen(root, conn, cursor):
         default_month = parent.get_current_month() if hasattr(parent, 'get_current_month') else datetime.now().month
         
         def set_focus_row():
-            nonlocal focus_row
+            nonlocal focus_row, focus_tr_id
             focus_row = form.selected_row.get()
+            focus_tr_id = trans_rows[focus_row]["tr_id"]
 
         # Edit button
         edit_btn = tk.Button(form, text="EDIT", font=(config.ha_vlarge))
@@ -689,15 +1145,15 @@ def create_home_screen(root, conn, cursor):
             year,
             local_accounts=parent.accounts,
             account_data=[parent.account_data[acc]],
-            single_acc=False,
+            single_acc=True,
             default_acc_id=acc_id,
             home_root=parent
         )])
 
         # New button 
         new_btn = tk.Button(form, text="NEW", font=(config.ha_vlarge))
-        new_btn.place(x=sc(895), y=sc(100), width=sc(80), height=sc(80))
-        new_btn.config(command=lambda: [set_focus_row(), create_edit_form(
+        new_btn.place(x=sc(900), y=sc(100), width=sc(80), height=sc(80))
+        new_btn.config(command=lambda: create_edit_form(
             form, trans_rows, tree,
             lambda *args: fetch_account_transactions(cursor, acc_id, year, parent.account_data[acc], ff_flag, acc_limit),
             None,
@@ -706,18 +1162,18 @@ def create_home_screen(root, conn, cursor):
             year,
             local_accounts=parent.accounts,
             account_data=[parent.account_data[acc]],
-            single_acc=False,
+            single_acc=True,
             default_acc_id=acc_id,
             home_root=parent
-        )])
+        ))
         
         close_btn = tk.Button(form, text="Close", font=(config.ha_head14), bg=COLORS["exit_but_bg"], width=15,
                             command=lambda: close_form_with_position(form, conn, cursor, win_id))
-        close_btn.place(x=sc(795), y=sc(800), width=sc(200), height=sc(35))
+        close_btn.place(x=sc(795), y=sc(800), width=sc(185), height=sc(35))
         
         # Update Status Group
-        status_frame = tk.LabelFrame(form, text="     Update Status    ", font=(config.ha_button), bg=config.master_bg)
-        status_frame.place(x=sc(795), y=sc(205), width=sc(200), height=sc(140))
+        status_frame = tk.LabelFrame(form, text="   Update Status  ", font=(config.ha_button), bg=config.master_bg)
+        status_frame.place(x=sc(795), y=sc(205), width=sc(185), height=sc(140))
         
         def set_status(status_value):
             selected = form.selected_row.get()
@@ -745,19 +1201,19 @@ def create_home_screen(root, conn, cursor):
         
         stat_comp_btn = tk.Button(status_frame, text="Complete", font=(config.ha_button), fg=COLORS["complete_tx"], width=15,
                                 command=lambda: set_status("Complete"))
-        stat_comp_btn.place(x=sc(25), y=sc(15), width=sc(150), height=sc(25))
+        stat_comp_btn.place(x=sc(15), y=sc(15), width=sc(155), height=sc(25))
         
         stat_pend_btn = tk.Button(status_frame, text="Pending", font=(config.ha_button), fg=COLORS["pending_tx"], width=15,
                                 command=lambda: set_status("Processing"))
-        stat_pend_btn.place(x=sc(25), y=sc(50), width=sc(150), height=sc(25))
+        stat_pend_btn.place(x=sc(15), y=sc(50), width=sc(155), height=sc(25))
         
         stat_fore_btn = tk.Button(status_frame, text="Forecast", font=(config.ha_button), fg=COLORS["forecast_tx"], width=15,
                                 command=lambda: set_status("Forecast"))
-        stat_fore_btn.place(x=sc(25), y=sc(85), width=sc(150), height=sc(25))
+        stat_fore_btn.place(x=sc(15), y=sc(85), width=sc(155), height=sc(25))
         
         # Set/Clear Flag Group
-        flag_frame = tk.LabelFrame(form, text="    Set/Clear Flag    ", font=(config.ha_button), bg=config.master_bg)
-        flag_frame.place(x=sc(795), y=sc(365), width=sc(200), height=sc(100))
+        flag_frame = tk.LabelFrame(form, text="  Set/Clear Flag  ", font=(config.ha_button), bg=config.master_bg)
+        flag_frame.place(x=sc(795), y=sc(365), width=sc(185), height=sc(100))
         
         def set_flag(flag_value):
             selected = form.selected_row.get()
@@ -770,25 +1226,49 @@ def create_home_screen(root, conn, cursor):
                 conn.commit()
                 trans_rows[:] = fetch_account_transactions(cursor, acc_id, year, parent.account_data[acc], ff_flag, acc_limit)
                 refresh_tree()
-                if hasattr(parent, 'update_ahb'):
-                    parent.update_ahb(parent, parent.get_current_month(), year)
         
-        flag1_btn = tk.Button(flag_frame, text="Set", font=(config.ha_normal), bg=COLORS["flag_y_bg"], width=4,
+        flag1_btn = tk.Button(flag_frame, text="Set", font=(config.ha_button), bg=COLORS["flag_y_bg"], width=4,
                             command=lambda: set_flag(1))
-        flag1_btn.place(x=sc(25), y=sc(15), width=sc(40), height=sc(25))
+        flag1_btn.place(x=sc(15), y=sc(10), width=sc(45), height=sc(25))
         
         flag2_btn = tk.Button(flag_frame, text="Set", font=(config.ha_button), bg=COLORS["flag_g_bg"], width=4,
                             command=lambda: set_flag(2))
-        flag2_btn.place(x=sc(80), y=sc(15), width=sc(40), height=sc(25))
+        flag2_btn.place(x=sc(70), y=sc(10), width=sc(45), height=sc(25))
         
         flag3_btn = tk.Button(flag_frame, text="Set", font=(config.ha_button), bg=COLORS["flag_b_bg"], width=4,
                             command=lambda: set_flag(4))
-        flag3_btn.place(x=sc(135), y=sc(15), width=sc(40), height=sc(25))
+        flag3_btn.place(x=sc(125), y=sc(10), width=sc(45), height=sc(25))
         
         clear_flag_btn = tk.Button(flag_frame, text="Clear Flag", font=(config.ha_button), width=15,
                                 command=lambda: set_flag(0) if form.selected_row.get() >= 0 and trans_rows[form.selected_row.get()]["status"] != "Total" 
                                 else messagebox.showerror("Error", "Cannot update a Monthly Balance row", parent=form))
-        clear_flag_btn.place(x=sc(25), y=sc(50), width=sc(150), height=sc(25))
+        clear_flag_btn.place(x=sc(15), y=sc(45), width=sc(155), height=sc(25))
+        
+        def set_marker():
+            selected = form.selected_row.get()
+            if selected >= 0 and selected < len(trans_rows) and trans_rows[selected]["status"] != "Total":
+                if selected in root.marked_rows:
+                    root.marked_rows.remove(selected)
+                else:
+                    root.marked_rows.add(selected)
+                trans_rows[:] = fetch_account_transactions(cursor, acc_id, year, parent.account_data[acc], ff_flag, acc_limit)
+                set_focus_row()
+                refresh_tree()
+            
+        def clear_all_markers():
+            current_scroll = root.tree.yview()[0]  # Fraction from 0.0 to 1.0
+            root.marked_rows.clear()
+            trans_rows[:] = fetch_account_transactions(cursor, acc_id, year, parent.account_data[acc], ff_flag, acc_limit)
+            refresh_tree()
+            root.tree.yview_moveto(current_scroll)  # Restore scroll
+            
+        # Row Marker Buttons
+        marker_frame = tk.LabelFrame(form, text="  Set/Clear Row Marker  ", font=(config.ha_button), bg=config.master_bg)
+        marker_frame.place(x=sc(795), y=sc(490), width=sc(185), height=sc(100))
+        rowmarker_btn=tk.Button(marker_frame, text="Set/Clear Row Marker", width=23, bg=COLORS["flag_mk_bg"], command=set_marker)
+        rowmarker_btn.place(x=sc(15), y=sc(10), width=sc(155), height=sc(25))
+        rowclear_btn=tk.Button(marker_frame, text="Clear ALL Row Markers", width=23, command=clear_all_markers)
+        rowclear_btn.place(x=sc(15), y=sc(45), width=sc(155), height=sc(25))
         
         # Scroll Buttons
         top_btn = tk.Button(form, text="T", font=(config.ha_head14), width=2, height=1,
@@ -815,17 +1295,24 @@ def create_home_screen(root, conn, cursor):
         form.bind("<MouseWheel>", on_mouse_wheel)
         
         form.wait_window()
+        
+    ####################### END of create_account_list_form
 
     def update_ahb(root, month, year):      # Now also updates EOMSB
         # Fetch fresh account data with credit limits
+        #logger.debug(f"update_ahb called - month={month}, year={year}")
         cursor.execute( "SELECT Acc_ID, Acc_Short_Name, Acc_Open, Acc_Jan, Acc_Feb, Acc_Mar, Acc_Apr, Acc_May, Acc_Jun, "
                         "Acc_Jul, Acc_Aug, Acc_Sep, Acc_Oct, Acc_Nov, Acc_Dec, Acc_Credit_Limit "
                         "FROM Account WHERE Acc_Year = ? ORDER BY Acc_ID", (year,))
         root.account_data = cursor.fetchall()
         root.accounts = [row[1] for row in root.account_data]
         root.credit_limits = [float(row[15] or 0.0) for row in root.account_data]
-        global accounts
+        
+        # Refresh globals
+        global accounts, account_data
         accounts = root.accounts
+        account_data = root.account_data
+        
         cash_som = 0
         credit_som = 0
         invest_som = 0
@@ -838,10 +1325,15 @@ def create_home_screen(root, conn, cursor):
         # Start of Month Balance - also EOMSB
         for col, account in enumerate(root.account_data):
             acc_open = float(account[2] or 0.0)
+            acc_credit_limit = float(root.credit_limits[col] or 0.0)
             balance = acc_open
             for m in range(month - 1):
                 monthly_change = float(account[3 + m] or 0.0)
                 balance += monthly_change
+            if col < 13 and balance < acc_credit_limit:
+                root.button_grid[1][col].config(bg=COLORS["dtot_ol_bg"])
+            else:
+                root.button_grid[1][col].config(bg=COLORS["white"])
             root.button_grid[1][col].config(text="{:,.2f}".format(balance))
             if col < 6:
                 cash_som += balance
@@ -869,7 +1361,12 @@ def create_home_screen(root, conn, cursor):
         # Account Balance Today
         for col in range(len(root.accounts)):
             som = float(root.button_grid[1][col]["text"].replace(",", ""))
+            acc_credit_limit = float(root.credit_limits[col] or 0.0)
             comp = completed[col]
+            if col < 13 and som + comp < acc_credit_limit:
+                root.button_grid[3][col].config(bg=COLORS["dtot_ol_bg"])
+            else:
+                root.button_grid[3][col].config(bg=COLORS["act_but_bg"])
             root.button_grid[3][col].config(text="{:,.2f}".format(som + comp))
 
         # Processing Transactions
@@ -879,7 +1376,12 @@ def create_home_screen(root, conn, cursor):
         # Processing Balance Today
         for col in range(len(root.accounts)):
             today = float(root.button_grid[3][col]["text"].replace(",", ""))
+            acc_credit_limit = float(root.credit_limits[col] or 0.0)
             proc = processing[col]
+            if col < 13 and today + proc < acc_credit_limit:
+                root.button_grid[5][col].config(bg=COLORS["dtot_ol_bg"])
+            else:
+                root.button_grid[5][col].config(bg=COLORS["white"])
             root.button_grid[5][col].config(text="{:,.2f}".format(today + proc))
 
         # Forecast Transactions
@@ -889,8 +1391,13 @@ def create_home_screen(root, conn, cursor):
         # Forecast EOM Balance - also EOMSB
         for col in range(len(root.accounts)):
             proc_today = float(root.button_grid[5][col]["text"].replace(",", ""))
+            acc_credit_limit = float(root.credit_limits[col] or 0.0)
             fore = forecast[col]
             fore += proc_today
+            if col < 13 and fore < acc_credit_limit:
+                root.button_grid[7][col].config(bg=COLORS["dtot_ol_bg"])
+            else:
+                root.button_grid[7][col].config(bg=COLORS["white"])
             root.button_grid[7][col].config(text="{:,.2f}".format(fore))
             if col < 6:
                 cash_eom += fore
@@ -948,8 +1455,16 @@ def create_home_screen(root, conn, cursor):
                 root.button_grid[3][col].config(bg=COLORS["act_but_hi_bg"])
 
     def on_ahb_acc_button(col):
+        selected = root.selected_row.get()
         if 0 <= col < len(root.button_grid[0]):
             create_account_list_form(root, conn, cursor, col)
+            root.rows_container = fetch_month_rows(cursor, get_current_month(), int(root.year_var.get()), accounts, account_data)
+            if get_current_month() == current.month and int(root.year_var.get()) == current.year:
+                is_current_month = True
+            else:
+                is_current_month = False
+            update_ahb(root, get_current_month(), int(root.year_var.get()))  # Refresh AHB
+            refresh_grid(root.tree, root.rows_container, is_current_month, root.marked_rows, focus_idx=selected)
 
     def show_user_guide():
         if getattr(sys, 'frozen', False):
@@ -965,37 +1480,41 @@ def create_home_screen(root, conn, cursor):
         if selected_tab in month_map_txt:
             root.previous_tab = selected_tab
             month_idx = month_map_txt[selected_tab] # get tab number, Jan=1, Dec=12
-            root.rows_container[0] = fetch_month_rows(cursor, month_idx, int(root.year_var.get()), root.accounts, root.account_data)
+            root.rows_container = fetch_month_rows(cursor, month_idx, int(root.year_var.get()), root.accounts, root.account_data)
             # If it is current month/year then set focus_day to today, else 1
-            logger.debug(f"month_ix={month_idx}, ")
+            #logger.debug(f"month_idx={month_idx}, ")
             if month_idx == int(current.month) and int(root.year_var.get()) == int(current.year):
                 focus_day = str(current.day) 
+                is_current_month = True
             else:
                 focus_day = 1
-            refresh_grid(root.tree, root.rows_container[0], root.marked_rows, focus_day=focus_day)
+                is_current_month = False
             root.update_ahb(root, month_idx, int(root.year_var.get()))  # Pass root explicitly
-        elif selected_tab == "SUMMARY":
-            create_summary_form(root, conn, cursor)
-            notebook.select(tabs[root.previous_tab])  # Return to previous
-            notebook.event_generate("<<NotebookTabChanged>>")  # Force event
-        elif selected_tab == " BUDGET ":
-            create_budget_form(root, conn, cursor)
-            notebook.select(tabs[root.previous_tab])  # Return to previous
-            notebook.event_generate("<<NotebookTabChanged>>")  # Force event
+            refresh_grid(root.tree, root.rows_container, is_current_month, root.marked_rows, focus_day=focus_day)
 
         elif selected_tab == "PREV":
             current_year = int(root.year_var.get())
             year_rows = fetch_years(cursor) # get valid year range from Lookup table
             if str(current_year - 1) in [str(y) for y in year_rows]: # we have a previous year
                 root.year_var.set(str(current_year - 1))
-                notebook.select(tabs["DEC"])
-                update_account_year_transactions(cursor, conn, current_year-1, accounts)
-                root.rows_container[0] = fetch_month_rows(cursor, 12, current_year - 1, accounts, account_data)
-                refresh_grid(root.tree, root.rows_container[0], root.marked_rows)
+                notebook.select(tabs[" DEC"])
+                month_idx = 12
+                fetch_accounts(cursor)
+                # Update form with new transactions
+                update_account_year_transactions(cursor, conn, current_year-1, root.accounts)
+                root.update_ahb(root, month_idx, int(root.year_var.get()))  # Pass root explicitly
+                root.rows_container = fetch_month_rows(cursor, 12, current_year - 1, root.accounts, root.account_data)
+                if 12 == int(current.month) and current_year-1 == int(current.year):
+                    focus_day = str(current.day) 
+                    is_current_month = True
+                else:
+                    focus_day = 1
+                    is_current_month = False
                 for col, account in enumerate(account_data):
                     acc_open = float(account[2]) if account[2] is not None else 0.0
                     balance = acc_open + sum(float(account[3 + m]) if account[3 + m] is not None else 0.0 for m in range(11))
                     root.button_grid[1][col].config(text="{:,.2f}".format(balance))
+                refresh_grid(root.tree, root.rows_container, is_current_month, root.marked_rows, focus_day=focus_day)
             else:  # No PREV year exists in system
                 messagebox.showinfo("Not a valid Year", "No PREV year exists in system")
                 notebook.select(tabs[root.previous_tab])  # Return to previous
@@ -1005,22 +1524,33 @@ def create_home_screen(root, conn, cursor):
             current_year = int(root.year_var.get())
             year_rows = fetch_years(cursor) # get valid year range from Lookup table
             if str(current_year + 1) in [str(y) for y in year_rows]: # we have a next year
+                # Bring forward current end-of-year account balances into next year
+                global accounts
+                accounts = fetch_accounts_by_year(cursor, current_year + 1)
+                if accounts:
+                    bring_forward_opening_balances(cursor, conn, current_year + 1)
                 root.year_var.set(str(current_year + 1))
-                notebook.select(tabs["JAN"])
-                update_account_year_transactions(cursor, conn, current_year+1, accounts)
-                root.rows_container[0] = fetch_month_rows(cursor, 1, current_year + 1, accounts, account_data)
-                refresh_grid(root.tree, root.rows_container[0], root.marked_rows)
+                notebook.select(tabs[" JAN"])
+                month_idx = 1
+                fetch_accounts(cursor)
+                # Update form with new transactions
+                update_account_year_transactions(cursor, conn, current_year+1, root.accounts)
+                root.update_ahb(root, month_idx, int(root.year_var.get()))  # Pass root explicitly
+                root.rows_container = fetch_month_rows(cursor, 1, current_year + 1, root.accounts, root.account_data)
+                if 1 == int(current.month) and current_year+1 == int(current.year):
+                    focus_day = str(current.day) 
+                    is_current_month = True
+                else:
+                    focus_day = 1
+                    is_current_month = False
                 for col, account in enumerate(account_data):
                     acc_open = float(account[2]) if account[2] is not None else 0.0
                     root.button_grid[1][col].config(text="{:,.2f}".format(acc_open))
+                refresh_grid(root.tree, root.rows_container, is_current_month, root.marked_rows, focus_day=focus_day)
             else:  # No NEXT year exists in system
                 messagebox.showinfo("Not a valid Year", "No NEXT year exists in system")
                 notebook.select(tabs[root.previous_tab])  # Return to previous
                 notebook.event_generate("<<NotebookTabChanged>>")  # Force event
-        elif selected_tab == " COMPARE ":
-            create_compare_form(root, conn, cursor)
-            notebook.select(tabs[root.previous_tab])  # Return to previous
-            notebook.event_generate("<<NotebookTabChanged>>")  # Force event
         else:
             for item in root.tree.get_children():
                 root.tree.delete(item)
@@ -1034,22 +1564,18 @@ def create_home_screen(root, conn, cursor):
         new_year = root.year_var.get()
         if selected_tab in month_map_txt:
             month_idx = month_map_txt[selected_tab]
-            cursor.execute("SELECT Acc_ID, Acc_Short_Name, Acc_Open, Acc_Jan, Acc_Feb, Acc_Mar, Acc_Apr, Acc_May, Acc_Jun, "
-                        "Acc_Jul, Acc_Aug, Acc_Sep, Acc_Oct, Acc_Nov, Acc_Dec, Acc_Credit_Limit "
-                        "FROM Account WHERE Acc_Year = ? ORDER BY Acc_ID", (int(root.year_var.get()),))
-            root.account_data = cursor.fetchall()
-            root.accounts = [row[1] for row in root.account_data]
-            root.credit_limits = [float(row[15] or 0.0) for row in root.account_data]  # Update credit limits too
-            # Sync globals
-            global accounts, account_data
-            accounts = root.accounts
-            account_data = root.account_data
+            fetch_accounts(cursor)
             # Fetch and refresh grid
-            root.rows_container[0] = fetch_month_rows(cursor, month_idx, int(new_year), root.accounts, root.account_data)
+            root.rows_container = fetch_month_rows(cursor, month_idx, int(new_year), root.accounts, root.account_data)
             current = datetime.now()
-            focus_day = str(current.day) if month_idx == current.month and int(new_year) == current.year else "1"
-            refresh_grid(root.tree, root.rows_container[0], root.marked_rows, focus_day=focus_day)
+            if month_idx == current.month and int(new_year) == current.year:
+                focus_day = str(current.day)
+                is_current_month = True
+            else:
+                focus_day = 1
+                is_current_month = False
             root.update_ahb(root, month_idx, int(new_year))
+            refresh_grid(root.tree, root.rows_container, is_current_month, root.marked_rows, focus_day=focus_day)
             # Update headers
             for col in range(14):
                 root.button_grid[0][col].config(text=root.accounts[col] if col < len(root.accounts) else f"Col{col+1}")
@@ -1067,154 +1593,204 @@ def create_home_screen(root, conn, cursor):
     # Configue right hand side buttons for New / Edit / Status change / Flags / Row Marker 
     def set_flag(flag_value):
         selected = root.selected_row.get()
-        if selected >= 0 and selected < len(root.rows_container[0]) and root.rows_container[0][selected]["status"] != "Total":
-            tr_id = root.rows_container[0][selected]["tr_id"]
+        #logger.debug(f"set_flag, selected (row) = {selected}, len rows = {len(root.rows_container)}")
+        if selected >= 0 and selected < len(root.rows_container) and root.rows_container[selected]["status"] != "Total":
+            tr_id = root.rows_container[selected]["tr_id"]
+            #logger.debug(f"selected = {selected} tr_id = {tr_id}")
+            if root.rows_container[selected]["status"] == "Complete":
+                messagebox.showerror("Error", "Action Flag cannot be set on a Complete Transaction", parent=root)
+                return
             cursor.execute("UPDATE Trans SET Tr_Query_flag = ? WHERE Tr_ID = ?", (flag_value, tr_id))
             conn.commit()
-            root.rows_container[0] = fetch_month_rows(cursor, get_current_month(), int(root.year_var.get()), accounts, account_data)
-#            root.rows_container[0][selected]["flag"] = flag_value
-            refresh_grid(root.tree, root.rows_container[0], root.marked_rows, focus_idx=selected)
+            root.rows_container = fetch_month_rows(cursor, get_current_month(), int(root.year_var.get()), accounts, account_data)
+            if get_current_month() == current.month and int(root.year_var.get()) == current.year:
+                is_current_month = True
+            else:
+                is_current_month = False
             update_ahb(root, get_current_month(), int(root.year_var.get()))  # Refresh AHB
+            refresh_grid(root.tree, root.rows_container, is_current_month, root.marked_rows, focus_idx=selected)
+        else:
+            messagebox.showerror("Error", "Not a valid row", parent=root)
 
     def clear_flag():
         selected = root.selected_row.get()
-        if selected >= 0 and selected < len(root.rows_container[0]) and root.rows_container[0][selected]["status"] != "Total":
-            tr_id = root.rows_container[0][selected]["tr_id"]
+        if selected >= 0 and selected < len(root.rows_container) and root.rows_container[selected]["status"] != "Total":
+            tr_id = root.rows_container[selected]["tr_id"]
             cursor.execute("SELECT Tr_Query_Flag FROM Trans WHERE Tr_ID=?", (tr_id,))
             current_flag = cursor.fetchone()[0]
             new_flag = 0 if not (current_flag & 8) else current_flag & ~8
             cursor.execute("UPDATE Trans SET Tr_Query_Flag=? WHERE Tr_ID=?", (new_flag, tr_id))
             conn.commit()
-            root.rows_container[0] = fetch_month_rows(cursor, get_current_month(), int(root.year_var.get()), accounts, account_data)
-            refresh_grid(root.tree, root.rows_container[0], root.marked_rows, focus_idx=selected)
+            root.rows_container = fetch_month_rows(cursor, get_current_month(), int(root.year_var.get()), accounts, account_data)
+            if get_current_month() == current.month and int(root.year_var.get()) == current.year:
+                is_current_month = True
+            else:
+                is_current_month = False
             update_ahb(root, get_current_month(), int(root.year_var.get()))  # Refresh AHB
+            refresh_grid(root.tree, root.rows_container, is_current_month, root.marked_rows, focus_idx=selected)
 
     def set_marker():
         selected = root.selected_row.get()
-        if selected >= 0 and selected < len(root.rows_container[0]) and root.rows_container[0][selected]["status"] != "Total":
+        if selected >= 0 and selected < len(root.rows_container) and root.rows_container[selected]["status"] != "Total":
             if selected in root.marked_rows:
                 root.marked_rows.remove(selected)
             else:
                 root.marked_rows.add(selected)
-            refresh_grid(root.tree, root.rows_container[0], root.marked_rows, focus_idx=selected)
+            if get_current_month() == current.month and int(root.year_var.get()) == current.year:
+                is_current_month = True
+            else:
+                is_current_month = False
+            update_ahb(root, get_current_month(), int(root.year_var.get()))  # Refresh AHB
+            refresh_grid(root.tree, root.rows_container, is_current_month, root.marked_rows, focus_idx=selected)
 
     def set_status(status_value):
         selected = root.selected_row.get()
-        if selected >= 0 and selected < len(root.rows_container[0]) and root.rows_container[0][selected]["status"] != "Total":
-            tr_id = root.rows_container[0][selected]["tr_id"]
+        #logger.debug(f"set_status() - selected = {selected}")
+        if selected >= 0 and selected < len(root.rows_container) and root.rows_container[selected]["status"] != "Total":
+            tr_id = root.rows_container[selected]["tr_id"]
             status_map = {"Complete": 3, "Processing": 2, "Forecast": 1}
+            # Assemble transaction date
+            tr_date = date(int(root.year_var.get()), get_current_month(),  int(root.rows_container[selected]["values"][1]))
+            today = datetime.now().date()
+            # Check status is valid for transaction date
+            if status_value == "Complete" and tr_date > today:
+                messagebox.showerror("Error", "Transaction date cannot be in the future if the transaction is Completed", parent=root)
+                return
+            if status_value == "Processing" and (tr_date > (today + timedelta(days=1)) or tr_date < (today - timedelta(days=10))):
+                messagebox.showerror("Error", "Transaction date must be within last 10 days if the transaction is Processing, it cannot be in the future beyond tomorrow.", parent=root)
+                return
+            if status_value == "Forecast" and tr_date < today:
+                messagebox.showerror("Error", "Transaction date must be today or later if the transaction is Forecast", parent=root)
+                return
             cursor.execute("UPDATE Trans SET Tr_Stat = ? WHERE Tr_ID = ?", (status_map[status_value], tr_id))
             conn.commit()
-            root.rows_container[0] = fetch_month_rows(cursor, get_current_month(), int(root.year_var.get()), accounts, account_data)
-            refresh_grid(root.tree, root.rows_container[0], root.marked_rows, focus_idx=selected)
+            # Action flags should automatically be cleared once a transaction is complete
+            if status_value == "Complete":
+                clear_flag()
+            # Refresh data
+            root.rows_container = fetch_month_rows(cursor, get_current_month(), int(root.year_var.get()), accounts, account_data)
+            if get_current_month() == current.month and int(root.year_var.get()) == current.year:
+                is_current_month = True
+            else:
+                is_current_month = False
             update_ahb(root, get_current_month(), int(root.year_var.get()))  # Refresh AHB
-
+            refresh_grid(root.tree, root.rows_container, is_current_month, root.marked_rows, focus_tr_id=tr_id)
+                
     def clear_all_markers():
         selected = root.selected_row.get()
         current_scroll = root.tree.yview()[0]  # Fraction from 0.0 to 1.0
         root.marked_rows.clear()
-        if selected >= 0 and selected < len(root.rows_container[0]):
-            refresh_grid(root.tree, root.rows_container[0], root.marked_rows, focus_idx=selected)
+        if get_current_month() == current.month and int(root.year_var.get()) == current.year:
+            is_current_month = True
         else:
-            refresh_grid(root.tree, root.rows_container[0], root.marked_rows)
+            is_current_month = False
+        if selected >= 0 and selected < len(root.rows_container):
+            refresh_grid(root.tree, root.rows_container, is_current_month, root.marked_rows, focus_idx=selected)
+        else:
+            refresh_grid(root.tree, root.rows_container, is_current_month, root.marked_rows)
             root.tree.yview_moveto(current_scroll)  # Restore scroll
 
     def toggle_ffid():
-        logger.debug(f"ff_checkbox_var before toggle: {ff_checkbox_var.get()}")
+        #logger.debug(f"ff_checkbox_var before toggle: {ff_checkbox_var.get()}")
         if ff_checkbox_var.get() == 0:
             ff_checkbox_var.set(1)     # Set checkbox
             ff_box.config(image=root.checked_img)
             cursor.execute("UPDATE Lookups SET Lup_Seq = 1 WHERE Lup_LupT_ID=8")
             conn.commit()
-            logger.debug("Lup_Seq = 1")
+            #logger.debug("Lup_Seq = 1")
         else:
             ff_checkbox_var.set(0)    # clear checkbox
             ff_box.config(image=root.unchecked_img)
             cursor.execute("UPDATE Lookups SET Lup_Seq = 0 WHERE Lup_LupT_ID=8")
             conn.commit()
-            logger.debug("Lup_Seq = 0")
-        logger.debug(f"ff_checkbox_var after toggle: {ff_checkbox_var.get()}")
+            #logger.debug("Lup_Seq = 0")
+        #logger.debug(f"ff_checkbox_var after toggle: {ff_checkbox_var.get()}")
 
         # Fetch fresh rows with updated ff_flag
         month_idx = root.get_current_month()        # gets currently selected tab
-        root.rows_container[0] = fetch_month_rows(cursor, month_idx, int(root.year_var.get()), root.accounts, root.account_data)
+        root.rows_container = fetch_month_rows(cursor, month_idx, int(root.year_var.get()), root.accounts, root.account_data)
         # Refresh grid with current focus
         current = datetime.now()
-        focus_day = str(current.day) if month_idx == current.month and int(root.year_var.get()) == current.year else "1"
-        refresh_grid(root.tree, root.rows_container[0], root.marked_rows, focus_day=focus_day)
+        if month_idx == current.month and int(root.year_var.get()) == current.year:
+            focus_day = str(current.day)
+            is_current_month = True
+        else:
+            focus_day = 1
+            is_current_month = False
+        refresh_grid(root.tree, root.rows_container, is_current_month, root.marked_rows, focus_day=focus_day)
 
     # NEW & EDIT Buttons
-    new_btn = tk.Button(root, text="NEW", font=(config.ha_vlarge), width=7, height=3,
-                command=lambda: [root.selected_row.set(-1), create_edit_form(root, root.rows_container[0], root.tree, fetch_month_rows, None, conn, 
-                    cursor, get_current_month(), int(root.year_var.get()), local_accounts=accounts, account_data=account_data), 
-                    update_ahb(root, get_current_month(), int(root.year_var.get()))])
-    new_btn.place(x=sc(1820), y=sc(350))
+    new_btn = tk.Button(root, text="NEW", font=(config.ha_vlarge),
+                command=lambda: [root.selected_row.set(-1), create_edit_form(root, root.rows_container, root.tree, fetch_month_rows, None, conn, cursor, 
+                    root.get_current_month(), int(root.year_var.get()), local_accounts=root.accounts, account_data=root.account_data, home_root=root)])
+    new_btn.place(x=sc(1820), y=sc(350), width=sc(80), height=sc(80))
     edit_btn = tk.Button(root, text="EDIT", font=(config.ha_vlarge), width=7, height=3,
-                command=lambda: create_edit_form(root, root.rows_container[0], root.tree, fetch_month_rows, 
-                    root.selected_row.get(), conn, cursor, root.get_current_month(), 
-                    int(root.year_var.get()), local_accounts=root.accounts, 
-                    account_data=root.account_data) if root.selected_row.get() >= 0 and root.selected_row.get() < len(root.rows_container[0]) else 
-                    messagebox.showinfo("HA2", "Please select a row to edit!"))
-    edit_btn.place(x=sc(1715), y=sc(350))
+                command=lambda: create_edit_form(root, root.rows_container, root.tree, fetch_month_rows, root.selected_row.get(), conn, cursor, 
+                    root.get_current_month(), int(root.year_var.get()), local_accounts=root.accounts, account_data=root.account_data, home_root=root) 
+                    if root.selected_row.get() >= 0 and root.selected_row.get() < len(root.rows_container) 
+                    else messagebox.showinfo(f"selected_row={root.selected_row.get()}  len={len(root.rows_container)}", "Please select a row to edit!"))
+    edit_btn.place(x=sc(1715), y=sc(350), width=sc(80), height=sc(80))
 
     # Update Transaction Status Buttons
-    btn_frame2 = tk.LabelFrame(root, text="Update Status", font=(config.ha_button), bg=config.master_bg, padx=sc(23), pady=sc(10))
-    btn_frame2.place(x=sc(1715), y=sc(445))
-    stat_comp_btn=tk.Button(  btn_frame2, text="Complete", font=(config.ha_button), fg=COLORS["complete_tx"], width=14, height=1,
+    btn_frame2 = tk.LabelFrame(root, text="  Update Status  ", font=(config.ha_button), bg=config.master_bg)
+    btn_frame2.place(x=sc(1715), y=sc(445), width=sc(185), height=sc(135))
+    stat_comp_btn=tk.Button(btn_frame2, text="Complete", font=(config.ha_button), fg=COLORS["complete_tx"], width=14, height=1,
                 command=lambda: set_status("Complete"))
-    stat_comp_btn.pack(side="top", padx=sc(5), pady=sc(3))
-    stat_pend_btn=tk.Button(  btn_frame2, text="Processing", font=(config.ha_button), fg=COLORS["pending_tx"], width=14, height=1,
+    stat_comp_btn.place(x=sc(15), y=sc(10), width=sc(155), height=sc(25))
+    stat_pend_btn=tk.Button(btn_frame2, text="Processing", font=(config.ha_button), fg=COLORS["pending_tx"], width=14, height=1,
                 command=lambda: set_status("Processing"))
-    stat_pend_btn.pack(side="top", padx=sc(5), pady=sc(3))
-    stat_fore_btn=tk.Button(  btn_frame2, text="Forecast", font=(config.ha_button), fg=COLORS["forecast_tx"], width=14, height=1,
+    stat_pend_btn.place(x=sc(15), y=sc(45), width=sc(155), height=sc(25))
+    stat_fore_btn=tk.Button(btn_frame2, text="Forecast", font=(config.ha_button), fg=COLORS["forecast_tx"], width=14, height=1,
                 command=lambda: set_status("Forecast"))
-    stat_fore_btn.pack(side="top", padx=sc(5), pady=sc(3))
+    stat_fore_btn.place(x=sc(15), y=sc(80), width=sc(155), height=sc(25))
     
     # Set/Clear Flag Buttons
-    flag_frame = tk.LabelFrame(root, text="Set/Clear Flag", font=(config.ha_button), bg=config.master_bg, padx=sc(5), pady=sc(10))
-    flag_frame.place(x=sc(1715), y=sc(600))
+    flag_frame = tk.LabelFrame(root, text="  Set/Clear Flag  ", font=(config.ha_button), bg=config.master_bg)
+    flag_frame.place(x=sc(1715), y=sc(590), width=sc(185), height=sc(100))
     flag1_btn=tk.Button(flag_frame, text="Set", width=6, font=config.ha_normal, bg=COLORS["flag_y_bg"], command=lambda: set_flag(1))
-    flag1_btn.grid(row=1, column=0, padx=sc(4))
+    flag1_btn.place(x=sc(15), y=sc(10), width=sc(45), height=sc(25))
     flag2_btn=tk.Button(flag_frame, text="Set", width=6, font=config.ha_normal, bg=COLORS["flag_g_bg"], command=lambda: set_flag(2))
-    flag2_btn.grid(row=1, column=1, padx=sc(4))
+    flag2_btn.place(x=sc(70), y=sc(10), width=sc(45), height=sc(25))
     flag3_btn=tk.Button(flag_frame, text="Set", width=6, font=config.ha_normal, bg=COLORS["flag_b_bg"], command=lambda: set_flag(4))
-    flag3_btn.grid(row=1, column=2, padx=sc(4))
-    tk.Button(flag_frame, text="Clear Flag", width=23, command=clear_flag).grid(row=2, column=0, columnspan=3, padx=sc(4), pady=sc(5))
+    flag3_btn.place(x=sc(125), y=sc(10), width=sc(45), height=sc(25))
+    flag_clr=tk.Button(flag_frame, text="Clear Flag", font=config.ha_normal, command=clear_flag)
+    flag_clr.place(x=sc(15), y=sc(45), width=sc(155), height=sc(25))
 
     # Row Marker Buttons
-    btn_frame3 = tk.LabelFrame(root, text="Set/Clear Row Marker", font=(config.ha_button), bg=config.master_bg, padx=sc(5), pady=sc(5))
-    btn_frame3.place(x=sc(1715), y=sc(710))
-    rowmarker_btn=tk.Button(btn_frame3, text="Set/Clear Row Marker", width=23, bg=COLORS["flag_mk_bg"], command=set_marker)
-    rowmarker_btn.pack(side="top", padx=sc(5), pady=sc(5))
-    tk.Button(btn_frame3, text="Clear ALL Row Markers", width=23, command=clear_all_markers).pack(side="top", padx=sc(5), pady=sc(10))
+    btn_frame3 = tk.LabelFrame(root, text="  Set/Clear Row Marker  ", font=(config.ha_button), bg=config.master_bg)
+    btn_frame3.place(x=sc(1715), y=sc(700), width=sc(185), height=sc(100))
+    rowmarker_btn=tk.Button(btn_frame3, text="Set/Clear Row Marker", bg=COLORS["flag_mk_bg"], command=set_marker)
+    rowmarker_btn.place(x=sc(15), y=sc(10), width=sc(155), height=sc(25))
+    rowmarker_clr=tk.Button(btn_frame3, text="Clear ALL Row Markers", command=clear_all_markers)
+    rowmarker_clr.place(x=sc(15), y=sc(45), width=sc(155), height=sc(25))
 
     # Transaction Count Frame
-    tc_frame = tk.LabelFrame(root, text="Transaction Count", font=(config.ha_button), bg=config.master_bg, padx=sc(5), pady=sc(5))
-    tc_frame.place(x=sc(1715), y=sc(830), width=sc(192), height=sc(130))
-    tc_fore_lbl=tk.Label(tc_frame, text="   Forecast:", anchor=tk.W, width=16, font=(config.ha_button), 
+    tc_frame = tk.LabelFrame(root, text="  Transaction Count  ", font=(config.ha_button), bg=config.master_bg)
+    tc_frame.place(x=sc(1715), y=sc(810), width=sc(185), height=sc(125))
+    tc_fore_lbl=tk.Label(tc_frame, text="Forecast:", anchor=tk.E, width=10, font=(config.ha_button), 
                 bg=config.master_bg, fg=COLORS["forecast_tx"])
-    tc_fore_lbl.place(x=sc(10), y=0)
+    tc_fore_lbl.place(x=sc(20), y=sc(5))
     tc_fore_num=tk.Label(tc_frame, textvariable=tc_forecast_var, anchor=tk.E, width=4, font=(config.ha_button), 
                 bg=config.master_bg, fg=COLORS["forecast_tx"])
-    tc_fore_num.place(x=sc(120), y=0)
-    tc_pend_lbl=tk.Label(tc_frame, text="Processing:", anchor=tk.W, width=16, font=(config.ha_button), 
+    tc_fore_num.place(x=sc(120), y=sc(5))
+    tc_pend_lbl=tk.Label(tc_frame, text="Processing:", anchor=tk.E, width=10, font=(config.ha_button), 
                 bg=config.master_bg, fg=COLORS["pending_tx"])
-    tc_pend_lbl.place(x=sc(10), y=sc(25))
+    tc_pend_lbl.place(x=sc(20), y=sc(30))
     tc_pend_num=tk.Label(tc_frame, textvariable=tc_processing_var, anchor=tk.E, width=4, font=(config.ha_button), 
                 bg=config.master_bg, fg=COLORS["pending_tx"])
-    tc_pend_num.place(x=sc(120), y=sc(25))
-    tc_comp_lbl=tk.Label(tc_frame, text="   Complete:", anchor=tk.W, width=16, font=(config.ha_button), 
+    tc_pend_num.place(x=sc(120), y=sc(30))
+    tc_comp_lbl=tk.Label(tc_frame, text="Complete:", anchor=tk.E, width=10, font=(config.ha_button), 
                 bg=config.master_bg, fg=COLORS["complete_tx"])
-    tc_comp_lbl.place(x=sc(10), y=sc(50))
+    tc_comp_lbl.place(x=sc(20), y=sc(55))
     tc_comp_num=tk.Label(tc_frame, textvariable=tc_complete_var, anchor=tk.E, width=4, font=(config.ha_button), 
                 bg=config.master_bg, fg=COLORS["complete_tx"])
-    tc_comp_num.place(x=sc(120), y=sc(50))
-    tc_tot_lbl=tk.Label(tc_frame, text="          Total:", anchor=tk.W, width=16, font=(config.ha_button), 
+    tc_comp_num.place(x=sc(120), y=sc(55))
+    tc_tot_lbl=tk.Label(tc_frame, text="Total:", anchor=tk.E, width=10, font=(config.ha_button), 
                 bg=config.master_bg, fg=COLORS["black"])
-    tc_tot_lbl.place(x=sc(10), y=sc(75))
+    tc_tot_lbl.place(x=sc(20), y=sc(80))
     tc_tot_num=tk.Label(tc_frame, textvariable=tc_total_var, anchor=tk.E, width=4, font=(config.ha_button), 
                 bg=config.master_bg, fg=COLORS["black"])
-    tc_tot_num.place(x=sc(120), y=sc(75))
+    tc_tot_num.place(x=sc(120), y=sc(80))
 
     # Display GC ID# Control and Initialise
     gcid_lbl=tk.Label(root, text="Show GC ID in list", anchor=tk.W, width=sc(14), font=(config.ha_button), 
@@ -1235,10 +1811,10 @@ def create_home_screen(root, conn, cursor):
 
     def refresh_colors():       # callback for change of colour scheme so it updates home form
         # Check widget initialization
-        logger.debug(f"Widgets initialized: {', '.join(f'{name}={getattr(root, name, None)}' for name in ['today_button', 'gear_btn', 'fullscreen_btn', 'help_btn', 'exit_button', 'new_btn', 'edit_btn', 'rowmarker_btn', 'flag1_btn', 'flag2_btn', 'flag3_btn', 'clear_flag_btn', 'clear_all_markers_btn', 'tc_fore_lbl', 'tc_fore_num', 'tc_pend_lbl', 'tc_pend_num', 'tc_comp_lbl', 'tc_comp_num', 'stat_fore_btn', 'stat_pend_btn', 'stat_comp_btn', 'total_lbl', 'total_num', 'show_gc_id_lbl', 'ff_box'])}")
+        #logger.debug(f"Widgets initialized: {', '.join(f'{name}={getattr(root, name, None)}' for name in ['today_button', 'gear_btn', 'fullscreen_btn', 'help_btn', 'exit_button', 'new_btn', 'edit_btn', 'rowmarker_btn', 'flag1_btn', 'flag2_btn', 'flag3_btn', 'clear_flag_btn', 'clear_all_markers_btn', 'tc_fore_lbl', 'tc_fore_num', 'tc_pend_lbl', 'tc_pend_num', 'tc_comp_lbl', 'tc_comp_num', 'stat_fore_btn', 'stat_pend_btn', 'stat_comp_btn', 'total_lbl', 'total_num', 'show_gc_id_lbl', 'ff_box'])}")
         
         """Update button grid colors based on COLORS dictionary."""
-        if CONFIG['APP_ENV'] == 'test':
+        if get_config('APP_ENV') == 'test':
             colour = COLORS["home_test_bg"]
         else:
             colour = COLORS["home_bg"]
@@ -1318,7 +1894,7 @@ def create_home_screen(root, conn, cursor):
         
         # add other widgets here
         
-        logger.debug("Home form colors refreshed")
+        #logger.debug("Home form colors refreshed")
         
     def on_mouse_wheel(event):
         root.tree.yview_scroll(-1 * (event.delta // 120), "units")
@@ -1329,6 +1905,7 @@ def create_home_screen(root, conn, cursor):
 
 if __name__ == "__main__":
     main()
+
 
 
 
