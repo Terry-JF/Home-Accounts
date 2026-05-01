@@ -1579,7 +1579,7 @@ def create_home_screen(root, conn, cursor):
             # Update headers
             for col in range(14):
                 root.button_grid[0][col].config(text=root.accounts[col] if col < len(root.accounts) else f"Col{col+1}")
-                root.tree.heading(f"col{col+5}", text=root.accounts[col] if col < len(root.accounts) else f"Col{col+1}")
+                root.tree.heading(f"col{col+6}", text=root.accounts[col] if col < len(root.accounts) else f"Col{col+1}")
 
     year_combo.bind("<<ComboboxSelected>>", on_year_change)
 
